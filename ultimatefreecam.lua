@@ -3,7 +3,9 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 local ContextActionService = game:GetService("ContextActionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local Lighting = game:GetService("Lighting")
 local GuiService = game:GetService("GuiService")
@@ -24,24 +26,27 @@ local CONFIG = {
     gamepadFlightModeKey = Enum.KeyCode.ButtonY,
     orbitToggleKey = Enum.KeyCode.O,
     orbitPickKey = Enum.KeyCode.T,
+    orbitSelectorKey = Enum.KeyCode.B,
     orbitClearKey = Enum.KeyCode.Y,
     orbitSelfKey = Enum.KeyCode.G,
     rotate90Key = Enum.KeyCode.R,
-    speedIncreaseKey = Enum.KeyCode.Equals,
-    speedDecreaseKey = Enum.KeyCode.Minus,
+    speedIncreaseKey = Enum.KeyCode.PageUp,
+    speedDecreaseKey = Enum.KeyCode.PageDown,
+    speedIncreaseFallbackKey = Enum.KeyCode.Equals,
+    speedDecreaseFallbackKey = Enum.KeyCode.Minus,
     speedResetKey = Enum.KeyCode.Zero,
     rollSpeedIncreaseKey = Enum.KeyCode.RightBracket,
     rollSpeedDecreaseKey = Enum.KeyCode.LeftBracket,
     boostKey = Enum.KeyCode.LeftShift,
     slowKey = Enum.KeyCode.LeftControl,
 
-    baseSpeed = 60,
-    minSpeed = 1,
-    maxSpeed = 500,
-    speedStep = 10,
+    baseSpeed = 15,
+    minSpeed = 0.5,
+    maxSpeed = 300,
+    speedStep = 5,
     boostMultiplier = 3,
     slowMultiplier = 0.25,
-    sensitivity = 0.2,
+    sensitivity = 0.15,
     rollSpeed = math.rad(80),
     rollSpeedStep = math.rad(10),
     minRollSpeed = math.rad(10),
@@ -61,6 +66,8 @@ local CONFIG = {
     orbitMinDistance = 2,
     orbitMaxDistance = 500,
     orbitPickDistance = 10000,
+    orbitPickHoldDelay = 0.18,
+    orbitSelectorDefault = "Object",
 
     panelDefaultWidth = 500,
     panelDefaultHeight = 580,
@@ -70,19 +77,92 @@ local CONFIG = {
     panelMaxHeight = 900,
 
     dofEnabled = false,
-    dofNearIntensity = 0.35,
-    dofFarIntensity = 0.35,
-    dofFocusDistance = 35,
-    dofInFocusRadius = 18,
+    dofFocusMode = "Manual",
+    -- Roblox does not expose aperture directly, so these defaults approximate a shallow f/2.8 look.
+    dofNearIntensity = 0.55,
+    dofFarIntensity = 0.60,
+    dofFocusDistance = 28,
+    dofInFocusRadius = 8,
+    dofAutoFocusSpeed = 8,
     dofMinDistance = 0,
     dofMaxDistance = 500,
+
+    gyroUrl = "http://192.168.1.8:8080/get",
+    gyroSensitivity = 5,
+    gyroSmoothness = 0.9,
+    gyroDeadzone = 0.002,
+    gyroPollRate = 44,
+    gyroMoveGain = 18,
+    gyroTiltGain = 0.85,
+    gyroMoveDamping = 5.5,
+    gyroMoveDeadzone = 0.18,
+    gyroVerticalAssist = 0.65,
 }
+
+function makeDefaultDroneModeSettings()
+    return {
+        speed                 = 4.5,
+        sensitivity           = 0.15,
+        posSmooth             = 8,
+        rotSmooth             = 10,
+        fovSmooth             = 12,
+        zoomStep              = 3,
+        pitchClamp            = math.rad(89),
+        boostMultiplier       = 3,
+        slowMultiplier        = 0.25,
+        verticalSpeedMult     = 1.0,
+        droneDeadzone         = 0.05,
+        droneRollRate         = 360,
+        dronePitchRate        = 360,
+        droneYawRate          = 240,
+        droneRollExpo         = 0.30,
+        dronePitchExpo        = 0.30,
+        droneYawExpo          = 0.25,
+        droneRollSuper        = 0.50,
+        dronePitchSuper       = 0.50,
+        droneYawSuper         = 0.40,
+        droneRateType         = "Betaflight",
+        droneActualCenter     = 200,
+        droneActualMaxRate    = 670,
+        droneActualExpo       = 0.0,
+        droneRateResponse     = 16,
+        droneAngularDamping   = 0.08,
+        droneThrottleMid      = 0.50,
+        droneThrottleExpo     = 0.30,
+        droneThrustResponse   = 18,
+        droneThrottlePower    = 1.35,
+        droneCameraTilt       = 20,
+        droneFullRotation     = true,
+        droneGravity          = 196.2,
+        droneHoverThrottle    = 0.35,
+        droneDrag             = 0.22,
+        droneQuadDrag         = 0.05,
+        droneInertia          = 0.40,
+        droneMass             = 0.85,
+        droneFlightMode       = "Acro",
+        droneAngleMaxTilt     = 45,
+        droneAngleLevelStrength = 8,
+        droneAngleYawCoord    = 0.18,
+        droneMoiPitch         = 0.85,
+        droneMoiRoll          = 0.70,
+        droneMoiYaw           = 0.95,
+        droneDragForward      = 0.20,
+        droneDragSideways     = 0.35,
+        droneDragVertical     = 0.30,
+        droneMotorSpinUp      = 28,
+        droneMotorSpinDown    = 22,
+        dronePropwashStrength = 0.18,
+        dronePropwashZone     = 0.45,
+        droneGroundEffectHeight = 3.0,
+        droneGroundEffectStrength = 0.08,
+    }
+end
 
 --// PER-MODE SETTINGS
 local modeSettings = {
     Normal = {
-        speed           = 60,
-        sensitivity     = 0.20,
+        speed           = 15,
+        sensitivity     = 0.15,
         posSmooth       = 10,
         rotSmooth       = 12,
         fovSmooth       = 12,
@@ -91,62 +171,13 @@ local modeSettings = {
         rollSpeed       = math.rad(80),
         boostMultiplier = 3,
         slowMultiplier  = 0.25,
+        orbitSpinSpeed  = math.rad(90),
+        orbitRadius     = CONFIG.orbitDefaultDistance,
     },
-    Drone = {
-        speed               = 4.5,
-        sensitivity         = 0.18,
-        posSmooth           = 8,
-        rotSmooth           = 10,
-        fovSmooth           = 12,
-        zoomStep            = 3,
-        pitchClamp          = math.rad(89),
-        boostMultiplier     = 3,
-        slowMultiplier      = 0.25,
-        verticalSpeedMult   = 1.0,
-        droneDeadzone       = 0.05,
-        droneRollRate       = 360,
-        dronePitchRate      = 360,
-        droneYawRate        = 240,
-        droneRollExpo       = 0.30,
-        dronePitchExpo      = 0.30,
-        droneYawExpo        = 0.25,
-        droneRollSuper      = 0.50,
-        dronePitchSuper     = 0.50,
-        droneYawSuper       = 0.40,
-        droneRateResponse   = 10,
-        droneAngularDamping = 0.20,
-        droneThrottleMid    = 0.50,
-        droneThrottleExpo   = 0.30,
-        droneThrustResponse = 5,
-        droneThrottlePower  = 1.8,
-        droneCameraTilt     = 20,
-        droneFullRotation   = true,
-        droneGravity        = 196.2,
-        droneHoverThrottle  = 0.50,
-        droneDrag           = 0.25,
-        droneQuadDrag       = 0.05,
-        droneInertia        = 0.60,
-        droneMass           = 1.0,
-        droneFlightMode         = "Acro",
-        droneAngleMaxTilt       = 45,
-        droneAngleLevelStrength = 8,
-        droneAngleYawCoord      = 0.5,
-        droneMoiPitch           = 1.0,
-        droneMoiRoll            = 0.7,
-        droneMoiYaw             = 1.5,
-        droneDragForward        = 0.15,
-        droneDragSideways       = 0.45,
-        droneDragVertical       = 0.55,
-        droneMotorSpinUp        = 15,
-        droneMotorSpinDown      = 10,
-        dronePropwashStrength   = 0.35,
-        dronePropwashZone       = 0.40,
-        droneGroundEffectHeight = 3.0,
-        droneGroundEffectStrength = 0.12,
-    },
-    Gyro = {
-        speed           = 60,
-        sensitivity     = 0.25,
+    Drone = makeDefaultDroneModeSettings(),
+    Gyroscope = {
+        speed           = 12,
+        sensitivity     = 0.15,
         posSmooth       = 12,
         rotSmooth       = 14,
         fovSmooth       = 12,
@@ -155,7 +186,16 @@ local modeSettings = {
         rollSpeed       = math.rad(80),
         boostMultiplier = 3,
         slowMultiplier  = 0.25,
-        gyroStrength    = 6,
+        gyroUrl         = CONFIG.gyroUrl,
+        gyroSensitivity = CONFIG.gyroSensitivity,
+        gyroSmoothness  = CONFIG.gyroSmoothness,
+        gyroDeadzone    = CONFIG.gyroDeadzone,
+        gyroPollRate    = CONFIG.gyroPollRate,
+        gyroMoveGain    = CONFIG.gyroMoveGain,
+        gyroTiltGain    = CONFIG.gyroTiltGain,
+        gyroMoveDamping = CONFIG.gyroMoveDamping,
+        gyroMoveDeadzone = CONFIG.gyroMoveDeadzone,
+        gyroVerticalAssist = CONFIG.gyroVerticalAssist,
     },
 }
 
@@ -164,6 +204,17 @@ local player = Players.LocalPlayer
 local cam = workspace.CurrentCamera
 local freecam = false
 local currentMode = "Normal"
+local TWO_PI = math.pi * 2
+local BODY_UP = Vector3.new(0, 1, 0)
+local BODY_RIGHT = Vector3.new(1, 0, 0)
+local BODY_FORWARD = Vector3.new(0, 0, -1)
+local DRONE_ARM_LENGTH = 0.32
+local DRONE_YAW_TORQUE = 0.12
+local DRONE_BATTERY_SAG_MAX = 0.14
+local DRONE_MOTOR_THRUST_EXPONENT = 2.0
+local DRONE_COLLISION_RADIUS = 0.35
+local DRONE_COLLISION_BOUNCE = 0.08
+local DRONE_COLLISION_TANGENTIAL_KEEP = 0.55
 
 local speed = CONFIG.baseSpeed
 local targetFov = CONFIG.defaultFov
@@ -177,18 +228,116 @@ local fovSmooth = CONFIG.fovSmooth
 local zoomStep = CONFIG.zoomStep
 local pitchClamp = CONFIG.pitchClamp
 local dofEnabled = CONFIG.dofEnabled
+local dofFocusMode = CONFIG.dofFocusMode
 local dofNearIntensity = CONFIG.dofNearIntensity
 local dofFarIntensity = CONFIG.dofFarIntensity
 local dofFocusDistance = CONFIG.dofFocusDistance
 local dofInFocusRadius = CONFIG.dofInFocusRadius
+local dofAutoFocusSpeed = CONFIG.dofAutoFocusSpeed
+local dofCurrentFocusDistance = dofFocusDistance
 local dofEffect
+local dofAutoFocusRayParams = RaycastParams.new()
+dofAutoFocusRayParams.FilterType = Enum.RaycastFilterType.Exclude
+dofAutoFocusRayParams.IgnoreWater = true
+local dofAutoFocusRayFilter = {}
+local dofAutoFocusCharacter = nil
 local orbitEnabled = false
 local orbitTarget = nil
 local orbitTargetLabel = "None"
 local orbitRadius = CONFIG.orbitDefaultDistance
+local orbitSpinSpeed = math.rad(90)
+local ORBIT_SELECTOR_MODES = {"Object", "Player", "Model", "Part", "Mesh", "Tool-Accessory"}
+local ORBIT_SELECTOR_MODE_SET = {Object = true, Player = true, Model = true, Part = true, Mesh = true, ["Tool-Accessory"] = true}
+local ORBIT_SELECTOR_MODE_ALIASES = {
+    object = "Object",
+    objects = "Object",
+    player = "Player",
+    players = "Player",
+    model = "Model",
+    models = "Model",
+    part = "Part",
+    parts = "Part",
+    mesh = "Mesh",
+    meshes = "Mesh",
+    tool = "Tool-Accessory",
+    tools = "Tool-Accessory",
+    accessory = "Tool-Accessory",
+    accessories = "Tool-Accessory",
+    ["tool-accessory"] = "Tool-Accessory",
+    ["tool-accessories"] = "Tool-Accessory",
+    ["tool accessory"] = "Tool-Accessory",
+    ["tool accessories"] = "Tool-Accessory",
+    ["tool/accessory"] = "Tool-Accessory",
+    ["tool/accessories"] = "Tool-Accessory",
+    ["tool_accessory"] = "Tool-Accessory",
+    ["tool_accessories"] = "Tool-Accessory",
+    toolaccessory = "Tool-Accessory",
+    toolaccessories = "Tool-Accessory",
+}
+local orbitSelectorMode = CONFIG.orbitSelectorDefault
+local orbitPickHolding = false
+local orbitPickStartedAt = 0
+local orbitPickPreviewVisible = false
+local orbitPreviewTarget = nil
+local orbitPreviewHighlight = nil
+local ORBIT_PREVIEW_HIGHLIGHT_NAME = "FreecamOrbitSelectorHighlight_" .. tostring(player.UserId)
 
 -- Mode-specific vars
-local gyroStrength = 6
+local gyroUrl = CONFIG.gyroUrl
+local gyroSensitivity = CONFIG.gyroSensitivity
+local gyroSmoothness = CONFIG.gyroSmoothness
+local gyroDeadzone = CONFIG.gyroDeadzone
+local gyroPollRate = CONFIG.gyroPollRate
+local gyroRawX, gyroRawY, gyroRawZ = 0, 0, 0
+local gyroSmoothX, gyroSmoothY, gyroSmoothZ = 0, 0, 0
+local gyroFetchInFlight = false
+local gyroPollAccum = 0
+local gyroLastStatus = "Idle"
+local gyroLastSampleAt = 0
+local GYRO_SENSOR_TO_CAMERA_SCALE = 1.0
+local GYRO_MAX_RATE_DPS = 720
+local GYRO_ROLL_FACTOR = 0.75
+local gyroRateToRadScale = math.rad(1)
+local gyroResolvedUrl = nil
+local gyroResolvedLabel = nil
+local gyroResolvedFromInputUrl = nil
+local gyroHttpProxyRemote = nil
+local PHYPHOX_GYRO_BUFFER_FALLBACKS = {
+    {x = "x", y = "y", z = "z", label = "Phyphox x/y/z"},
+    {x = "gyrX", y = "gyrY", z = "gyrZ", label = "Phyphox gyrX/Y/Z"},
+    {x = "gyroX", y = "gyroY", z = "gyroZ", label = "Phyphox gyroX/Y/Z"},
+    {x = "gx", y = "gy", z = "gz", label = "Phyphox gx/gy/gz"},
+    {x = "wx", y = "wy", z = "wz", label = "Phyphox wx/wy/wz"},
+}
+local GYRO_HTTP_PROXY_NAME = "FreecamGyroHttpProxy"
+local GYRO_PROXY_SAFE_POLL_RATE = 44
+local gyro6dof = {
+    moveGain = CONFIG.gyroMoveGain,
+    tiltGain = CONFIG.gyroTiltGain,
+    moveDamping = CONFIG.gyroMoveDamping,
+    moveDeadzone = CONFIG.gyroMoveDeadzone,
+    verticalAssist = CONFIG.gyroVerticalAssist,
+    tiltDeadzoneRad = math.rad(4),
+    maxTiltRad = math.rad(35),
+    earthGravityMs2 = 9.80665,
+    worldVelocity = Vector3.zero,
+    basePhone = nil,
+    baseCamera = nil,
+    currentRot = nil,
+    resolvedPlan = nil,
+    sample = {
+        attitudeCFrame = nil,
+        accel = Vector3.zero,
+        linearAccel = Vector3.zero,
+        gravity = Vector3.zero,
+        eulerDeg = Vector3.zero,
+        hasAttitude = false,
+        hasAccel = false,
+        hasLinearAccel = false,
+        hasGravity = false,
+        hasEuler = false,
+    },
+}
 local droneVertMult = 1.0
 local droneDeadzone = 0.05
 local droneRollRate = 360
@@ -200,49 +349,63 @@ local droneYawExpo = 0.25
 local droneRollSuper = 0.50
 local dronePitchSuper = 0.50
 local droneYawSuper = 0.40
-local droneRateResponse = 10
-local droneAngularDamping = 0.20
+local droneRateResponse = 16
+local droneAngularDamping = 0.08
 local droneThrottleMid = 0.50
 local droneThrottleExpo = 0.30
-local droneThrustResponse = 5
-local droneThrottlePower = 1.8
+local droneThrustResponse = 18
+local droneThrottlePower = 1.35
 local droneCameraTilt = 20
 local droneFullRotation = true
 local droneGravity = 196.2
-local droneHoverThrottle = 0.50
-local droneDrag = 0.25
+local droneHoverThrottle = 0.35
+local droneDrag = 0.22
 local droneQuadDrag = 0.05
-local droneInertia = 0.60
-local droneMass = 1.0
+local droneInertia = 0.40
+local droneMass = 0.85
 local droneVelocity = Vector3.zero
 local droneThrottleState = 0
 local droneOrient = nil
 local droneAngVel = Vector3.zero
+local droneMotorOutputs = {0, 0, 0, 0}
+local droneBatterySag = 0
+local droneGroundRayParams = RaycastParams.new()
+droneGroundRayParams.FilterType = Enum.RaycastFilterType.Exclude
+droneGroundRayParams.IgnoreWater = true
+local droneGroundRayFilter = {}
+local droneRaycastCharacter = nil
+local dronePropwashPhase = 0
 
 -- Drone flight mode: "Acro", "Angle", "3D"
 local droneFlightMode = "Acro"
 local droneAngleMaxTilt = 45
 local droneAngleLevelStrength = 8
-local droneAngleYawCoord = 0.5
+local droneAngleYawCoord = 0.18
 
 -- Advanced physics
-local droneMoiPitch = 1.0
-local droneMoiRoll = 0.7
-local droneMoiYaw = 1.5
-local droneDragForward = 0.15
-local droneDragSideways = 0.45
-local droneDragVertical = 0.55
-local droneMotorSpinUp = 15
-local droneMotorSpinDown = 10
-local dronePropwashStrength = 0.35
-local dronePropwashZone = 0.40
+local droneRateType = "Betaflight"
+local droneActualCenter = 200
+local droneActualMaxRate = 670
+local droneActualExpo = 0.0
+local droneMoiPitch = 0.85
+local droneMoiRoll = 0.70
+local droneMoiYaw = 0.95
+local droneDragForward = 0.20
+local droneDragSideways = 0.35
+local droneDragVertical = 0.30
+local droneMotorSpinUp = 28
+local droneMotorSpinDown = 22
+local dronePropwashStrength = 0.18
+local dronePropwashZone = 0.45
 local droneGroundEffectHeight = 3.0
-local droneGroundEffectStrength = 0.12
+local droneGroundEffectStrength = 0.08
 local droneMotorOutput = 0
+local droneMotorCommand = 0
+local resetDronePhysicsState
 
 -- Rotation state
 local yaw, pitch, roll = 0, 0, 0
-local yawTarget, pitchTarget = 0, 0
+local yawTarget, pitchTarget, rollTarget = 0, 0, 0
 
 local currentCFrame
 local targetCFrame
@@ -259,15 +422,139 @@ local stickOverlayVisible = false
 local uiRefs = {}
 local panelWidth = CONFIG.panelDefaultWidth
 local panelHeight = CONFIG.panelDefaultHeight
+local scriptKilled = false
+local connections = {}
+local restoreToken = 0
+local topbarRequestId = 0
+local sharedEnv = _G
+if type(getgenv) == "function" then
+    local ok, env = pcall(getgenv)
+    if ok and type(env) == "table" then
+        sharedEnv = env
+    end
+end
+local RUN_CLEANUP_KEY = "__UltimateFreecamCleanup_" .. tostring(player.UserId)
+
+do
+    local previousCleanup = sharedEnv and sharedEnv[RUN_CLEANUP_KEY]
+    if type(previousCleanup) == "function" then
+        pcall(previousCleanup, "rerun")
+    end
+end
 
 --// HUMANOID
-local function getHumanoid()
+function getHumanoid()
     local char = player.Character or player.CharacterAdded:Wait()
     humanoid = char:WaitForChild("Humanoid")
 end
 getHumanoid()
-player.CharacterAdded:Connect(function()
+
+function refreshCameraReference()
+    local current = workspace.CurrentCamera
+    if current and current ~= cam then
+        cam = current
+        if freecam then
+            cam.CameraType = Enum.CameraType.Scriptable
+            cam.FieldOfView = targetFov
+            if currentCFrame then
+                cam.CFrame = currentCFrame
+                targetCFrame = currentCFrame
+            else
+                currentCFrame = cam.CFrame
+                targetCFrame = cam.CFrame
+            end
+        end
+    end
+    return cam
+end
+
+function syncDroneRaycastFilter()
+    local character = player.Character
+    if character == droneRaycastCharacter then
+        return
+    end
+    droneRaycastCharacter = character
+    droneGroundRayFilter[1] = character
+    droneGroundRayFilter[2] = nil
+    droneGroundRayParams.FilterDescendantsInstances = droneGroundRayFilter
+end
+
+syncDroneRaycastFilter()
+
+function syncDofAutoFocusFilter()
+    local character = player.Character
+    if character == dofAutoFocusCharacter then
+        return
+    end
+    dofAutoFocusCharacter = character
+    dofAutoFocusRayFilter[1] = character
+    dofAutoFocusRayFilter[2] = nil
+    dofAutoFocusRayParams.FilterDescendantsInstances = dofAutoFocusRayFilter
+end
+
+syncDofAutoFocusFilter()
+
+function extractRotationCFrame(cf)
+    if not cf then
+        return CFrame.new()
+    end
+    return CFrame.fromMatrix(Vector3.zero, cf.RightVector, cf.UpVector, -cf.LookVector)
+end
+
+function resetGyroSpatialState()
+    gyroSmoothX = 0
+    gyroSmoothY = 0
+    gyroSmoothZ = 0
+    gyroPollAccum = 0
+    gyroResolvedUrl = nil
+    gyroResolvedLabel = nil
+    gyroResolvedFromInputUrl = nil
+    gyro6dof.worldVelocity = Vector3.zero
+    gyro6dof.basePhone = nil
+    gyro6dof.baseCamera = nil
+    gyro6dof.currentRot = nil
+    gyro6dof.resolvedPlan = nil
+    gyro6dof.sample.attitudeCFrame = nil
+    gyro6dof.sample.accel = Vector3.zero
+    gyro6dof.sample.linearAccel = Vector3.zero
+    gyro6dof.sample.gravity = Vector3.zero
+    gyro6dof.sample.eulerDeg = Vector3.zero
+    gyro6dof.sample.hasAttitude = false
+    gyro6dof.sample.hasAccel = false
+    gyro6dof.sample.hasLinearAccel = false
+    gyro6dof.sample.hasGravity = false
+    gyro6dof.sample.hasEuler = false
+end
+
+function recenterGyroPose(referenceRot)
+    local baseRot = referenceRot or extractRotationCFrame(targetCFrame or currentCFrame or (cam and cam.CFrame))
+    local sample = gyro6dof.sample
+
+    gyroSmoothX = 0
+    gyroSmoothY = 0
+    gyroSmoothZ = 0
+    gyro6dof.worldVelocity = Vector3.zero
+    gyro6dof.baseCamera = baseRot
+    gyro6dof.currentRot = baseRot
+    if sample.hasAttitude and sample.attitudeCFrame then
+        gyro6dof.basePhone = sample.attitudeCFrame
+    else
+        gyro6dof.basePhone = nil
+    end
+
+    local rx, ry, rz = baseRot:ToOrientation()
+    pitch, yaw, roll = rx, ry, rz
+    pitchTarget, yawTarget, rollTarget = rx, ry, rz
+    return gyro6dof.basePhone ~= nil
+end
+
+table.insert(connections, player.CharacterAdded:Connect(function()
+    if scriptKilled then
+        return
+    end
     getHumanoid()
+    syncDroneRaycastFilter()
+    syncDofAutoFocusFilter()
     if freecam then
         local h = humanoid
         if h then
@@ -301,7 +588,7 @@ player.CharacterAdded:Connect(function()
             pendingRestore = false
         end
     end
-end)
+end))
 
 --// INPUT STATE
 local moveState = {
@@ -317,7 +604,7 @@ local rollState = {
     [CONFIG.rollRightKey] = false,
 }
 
-local function bindInputs()
+function bindInputs()
     ContextActionService:BindAction("FC_Move", function(_, state, input)
         if not controlsEnabled then
             return Enum.ContextActionResult.Sink
@@ -352,8 +639,8 @@ local function bindInputs()
     end, false, CONFIG.rollLeftKey, CONFIG.rollRightKey)
 end
 
-local function bindExtraControls()
-    ContextActionService:BindAction("FC_Extra", function(_, state, input)
+function bindExtraControls()
+    ContextActionService:BindActionAtPriority("FC_Extra", function(_, state, input)
         if state ~= Enum.UserInputState.Begin then
             return Enum.ContextActionResult.Sink
         end
@@ -365,28 +652,35 @@ local function bindExtraControls()
         if currentMode == "Drone" then
             step = 0.25
         end
-        if input.KeyCode == CONFIG.speedIncreaseKey then
+        local key = input.KeyCode
+        if key == CONFIG.speedIncreaseKey or key == CONFIG.speedIncreaseFallbackKey then
             speed = math.min(CONFIG.maxSpeed, speed + step)
-        elseif input.KeyCode == CONFIG.speedDecreaseKey then
+        elseif key == CONFIG.speedDecreaseKey or key == CONFIG.speedDecreaseFallbackKey then
             speed = math.max(CONFIG.minSpeed, speed - step)
-        elseif input.KeyCode == CONFIG.speedResetKey then
+        elseif key == CONFIG.speedResetKey then
             speed = CONFIG.baseSpeed
         end
 
-        if input.KeyCode == CONFIG.rollResetKey then
+        if key == CONFIG.rollResetKey then
             roll = 0
+            rollTarget = 0
+            if currentMode == "Gyroscope" and freecam then
+                recenterGyroPose(extractRotationCFrame(targetCFrame or currentCFrame or cam.CFrame))
+            end
         end
 
-        if input.KeyCode == CONFIG.rollSpeedIncreaseKey then
+        if key == CONFIG.rollSpeedIncreaseKey then
             rollSpeed = math.min(CONFIG.maxRollSpeed, rollSpeed + CONFIG.rollSpeedStep)
-        elseif input.KeyCode == CONFIG.rollSpeedDecreaseKey then
+        elseif key == CONFIG.rollSpeedDecreaseKey then
             rollSpeed = math.max(CONFIG.minRollSpeed, rollSpeed - CONFIG.rollSpeedStep)
         end
 
         return Enum.ContextActionResult.Sink
-    end, false,
+    end, false, Enum.ContextActionPriority.High.Value,
         CONFIG.speedIncreaseKey,
         CONFIG.speedDecreaseKey,
+        CONFIG.speedIncreaseFallbackKey,
+        CONFIG.speedDecreaseFallbackKey,
         CONFIG.speedResetKey,
         CONFIG.rollResetKey,
         CONFIG.rollSpeedIncreaseKey,
@@ -395,7 +689,7 @@ local function bindExtraControls()
 end
 
 
-local function unbindInputs()
+function unbindInputs()
     ContextActionService:UnbindAction("FC_Move")
     ContextActionService:UnbindAction("FC_Roll")
     ContextActionService:UnbindAction("FC_Extra")
@@ -407,7 +701,7 @@ local function unbindInputs()
     end
 end
 
-local function captureCoreGuiState()
+function captureCoreGuiState()
     local state = {}
     for _, guiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
         local ok, enabled = pcall(function()
@@ -420,7 +714,7 @@ local function captureCoreGuiState()
     return state
 end
 
-local function applyCoreGuiState(state, enabledOverride)
+function applyCoreGuiState(state, enabledOverride)
     for _, guiType in ipairs(Enum.CoreGuiType:GetEnumItems()) do
         local target
         if enabledOverride ~= nil then
@@ -436,7 +730,36 @@ local function applyCoreGuiState(state, enabledOverride)
     end
 end
 
-local function capturePlayerGuiState()
+function captureTopbarState()
+    local ok, enabled = pcall(function()
+        return StarterGui:GetCore("TopbarEnabled")
+    end)
+    if ok and type(enabled) == "boolean" then
+        return enabled
+    end
+    return true
+end
+
+function setTopbarEnabled(enabled)
+    topbarRequestId = topbarRequestId + 1
+    local requestId = topbarRequestId
+    task.spawn(function()
+        for _ = 1, 5 do
+            if requestId ~= topbarRequestId then
+                return
+            end
+            local ok = pcall(function()
+                StarterGui:SetCore("TopbarEnabled", enabled and true or false)
+            end)
+            if ok or requestId ~= topbarRequestId then
+                return
+            end
+            task.wait(0.1)
+        end
+    end)
+end
+
+function capturePlayerGuiState()
     local state = {}
     for _, gui in ipairs(playerGui:GetDescendants()) do
         if gui:IsA("ScreenGui") then
@@ -446,7 +769,7 @@ local function capturePlayerGuiState()
     return state
 end
 
-local function applyPlayerGuiState(state, enabledOverride)
+function applyPlayerGuiState(state, enabledOverride)
     for gui, enabled in pairs(state or {}) do
         if gui and gui.Parent and gui:IsA("ScreenGui") then
             if enabledOverride ~= nil then
@@ -496,9 +819,11 @@ function setUiHidden(value)
         if uiHidden then
             applyCoreGuiState(nil, false)
             applyPlayerGuiState(nil, false)
+            setTopbarEnabled(false)
         else
             applyCoreGuiState(saved.CoreGui, nil)
             applyPlayerGuiState(saved.PlayerGui, nil)
+            setTopbarEnabled(saved.TopbarEnabled)
         end
     end)
 end
@@ -520,7 +845,7 @@ function setStickOverlayVisible(value)
     end
 end
 
-local function shortenLabel(text, maxLen)
+function shortenLabel(text, maxLen)
     if not text then
         return "None"
     end
@@ -530,7 +855,59 @@ local function shortenLabel(text, maxLen)
     return text:sub(1, maxLen - 3) .. "..."
 end
 
-local function getOrbitTargetLabel(target)
+function normalizeOrbitSelectorMode(mode)
+    mode = tostring(mode or CONFIG.orbitSelectorDefault):match("^%s*(.-)%s*$")
+    local alias = ORBIT_SELECTOR_MODE_ALIASES[mode:lower()]
+    if alias then
+        return alias
+    end
+    local first = mode:sub(1, 1):upper()
+    local rest = mode:sub(2):lower()
+    mode = first .. rest
+    if ORBIT_SELECTOR_MODE_SET[mode] then
+        return mode
+    end
+    return CONFIG.orbitSelectorDefault
+end
+
+function isMeshOrbitPart(part)
+    if not part or not part:IsA("BasePart") then
+        return false
+    end
+    if part:IsA("MeshPart") then
+        return true
+    end
+    return part:FindFirstChildWhichIsA("SpecialMesh") ~= nil
+end
+
+function isToolAccessoryTarget(inst)
+    return inst and (inst:IsA("Tool") or inst:IsA("Accessory") or inst:IsA("Accoutrement"))
+end
+
+function getToolAccessoryHandle(target)
+    if not target then
+        return nil
+    end
+    local handle = target:FindFirstChild("Handle")
+    if handle and handle:IsA("BasePart") then
+        return handle
+    end
+    return target:FindFirstChildWhichIsA("BasePart", true)
+end
+
+function getToolAccessoryAncestor(inst)
+    if not inst then
+        return nil
+    end
+    if isToolAccessoryTarget(inst) then
+        return inst
+    end
+    return inst:FindFirstAncestorWhichIsA("Tool")
+        or inst:FindFirstAncestorWhichIsA("Accessory")
+        or inst:FindFirstAncestorWhichIsA("Accoutrement")
+end
+
+function getOrbitTargetLabel(target)
     if not target then
         return "None"
     end
@@ -540,10 +917,16 @@ local function getOrbitTargetLabel(target)
         end
         return target.Name
     end
+    if target:IsA("BasePart") and isMeshOrbitPart(target) then
+        return target.Name .. " [Mesh]"
+    end
+    if isToolAccessoryTarget(target) then
+        return target.Name .. " [" .. target.ClassName .. "]"
+    end
     return target.Name
 end
 
-local function getOrbitTargetPosition(target)
+function getOrbitTargetPosition(target)
     if not target then
         return nil
     end
@@ -564,16 +947,63 @@ local function getOrbitTargetPosition(target)
         return target:GetPivot().Position
     elseif target:IsA("BasePart") then
         return target.Position
+    elseif isToolAccessoryTarget(target) then
+        local handle = getToolAccessoryHandle(target)
+        if handle then
+            return handle.Position
+        end
     elseif target:IsA("Attachment") then
         return target.WorldPosition
     end
     return nil
 end
 
-local function resolveOrbitTarget(inst)
+function resolveOrbitTarget(inst, selectorMode)
     if not inst then
         return nil
     end
+    selectorMode = normalizeOrbitSelectorMode(selectorMode or orbitSelectorMode)
+
+    if selectorMode == "Player" then
+        if inst:IsA("Player") then
+            return inst
+        end
+        local model = inst:IsA("Model") and inst or inst:FindFirstAncestorWhichIsA("Model")
+        if model then
+            return Players:GetPlayerFromCharacter(model)
+        end
+        return nil
+    end
+
+    if selectorMode == "Model" then
+        if inst:IsA("Model") then
+            return inst
+        end
+        if inst:IsA("Humanoid") and inst.Parent and inst.Parent:IsA("Model") then
+            return inst.Parent
+        end
+        return inst:FindFirstAncestorWhichIsA("Model")
+    end
+
+    if selectorMode == "Part" then
+        if inst:IsA("BasePart") then
+            return inst
+        end
+        return inst:FindFirstAncestorWhichIsA("BasePart")
+    end
+
+    if selectorMode == "Mesh" then
+        local part = inst:IsA("BasePart") and inst or inst:FindFirstAncestorWhichIsA("BasePart")
+        if isMeshOrbitPart(part) then
+            return part
+        end
+        return nil
+    end
+
+    if selectorMode == "Tool-Accessory" then
+        return getToolAccessoryAncestor(inst)
+    end
+
     if inst:IsA("Player") then
         return inst
     end
@@ -597,6 +1027,177 @@ local function resolveOrbitTarget(inst)
         return inst
     end
     return nil
+end
+
+function getOrbitTargetAdornee(target)
+    if not target then
+        return nil
+    end
+    if target:IsA("Player") then
+        return target.Character
+    end
+    if target:IsA("Model") or target:IsA("BasePart") then
+        return target
+    end
+    if isToolAccessoryTarget(target) then
+        return getToolAccessoryHandle(target)
+    end
+    if target:IsA("Attachment") and target.Parent and target.Parent:IsA("BasePart") then
+        return target.Parent
+    end
+    return nil
+end
+
+function ensureOrbitPreviewHighlight()
+    if orbitPreviewHighlight and orbitPreviewHighlight.Parent then
+        return orbitPreviewHighlight
+    end
+
+    local old = workspace:FindFirstChild(ORBIT_PREVIEW_HIGHLIGHT_NAME)
+    if old then
+        old:Destroy()
+    end
+
+    local h = Instance.new("Highlight")
+    h.Name = ORBIT_PREVIEW_HIGHLIGHT_NAME
+    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    h.FillColor = Color3.fromRGB(80, 190, 255)
+    h.FillTransparency = 1
+    h.OutlineColor = Color3.fromRGB(120, 220, 255)
+    h.OutlineTransparency = 0
+    h.Enabled = false
+    h.Parent = workspace
+    orbitPreviewHighlight = h
+    return h
+end
+
+function setOrbitPreviewTarget(target)
+    orbitPreviewTarget = target
+    local highlight = ensureOrbitPreviewHighlight()
+    local adornee = getOrbitTargetAdornee(target)
+    highlight.Adornee = adornee
+    highlight.Enabled = adornee ~= nil
+end
+
+function clearOrbitPreview()
+    orbitPreviewTarget = nil
+    orbitPickPreviewVisible = false
+    if orbitPreviewHighlight then
+        orbitPreviewHighlight.Enabled = false
+        orbitPreviewHighlight.Adornee = nil
+    end
+end
+
+function destroyOrbitPreview()
+    orbitPickHolding = false
+    orbitPickStartedAt = 0
+    clearOrbitPreview()
+    if orbitPreviewHighlight then
+        orbitPreviewHighlight:Destroy()
+        orbitPreviewHighlight = nil
+    end
+end
+
+function getOrbitPickRaycastResult()
+    local camNow = refreshCameraReference()
+    if not camNow then
+        return nil
+    end
+    local viewportSize = camNow.ViewportSize
+    local x = viewportSize.X * 0.5
+    local y = viewportSize.Y * 0.5
+    if cursorUnlocked then
+        local mousePos = UserInputService:GetMouseLocation()
+        local inset = GuiService:GetGuiInset()
+        x = mousePos.X - inset.X
+        y = mousePos.Y - inset.Y
+    end
+    x = math.clamp(x, 0, viewportSize.X)
+    y = math.clamp(y, 0, viewportSize.Y)
+    local ray = camNow:ViewportPointToRay(x, y)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.IgnoreWater = true
+    local exclude = {}
+    if player.Character then
+        table.insert(exclude, player.Character)
+    end
+    params.FilterDescendantsInstances = exclude
+    return workspace:Raycast(ray.Origin, ray.Direction * CONFIG.orbitPickDistance, params)
+end
+
+function getOrbitTargetUnderCursor()
+    local result = getOrbitPickRaycastResult()
+    if result and result.Instance then
+        return resolveOrbitTarget(result.Instance, orbitSelectorMode)
+    end
+    return nil
+end
+
+function setOrbitSelectorMode(mode)
+    orbitSelectorMode = normalizeOrbitSelectorMode(mode)
+    clearOrbitPreview()
+end
+
+function cycleOrbitSelectorMode(dir)
+    local idx = 1
+    for i, mode in ipairs(ORBIT_SELECTOR_MODES) do
+        if mode == orbitSelectorMode then
+            idx = i
+            break
+        end
+    end
+    local newIndex = ((idx - 1 + (dir or 1)) % #ORBIT_SELECTOR_MODES) + 1
+    setOrbitSelectorMode(ORBIT_SELECTOR_MODES[newIndex])
+end
+
+function beginOrbitPickTarget()
+    if not freecam then
+        return
+    end
+    orbitPickHolding = true
+    orbitPickStartedAt = os.clock()
+    clearOrbitPreview()
+end
+
+function updateOrbitPickPreview()
+    if not orbitPickHolding then
+        return
+    end
+    if not freecam then
+        destroyOrbitPreview()
+        return
+    end
+    if os.clock() - orbitPickStartedAt < CONFIG.orbitPickHoldDelay then
+        return
+    end
+
+    orbitPickPreviewVisible = true
+    setOrbitPreviewTarget(getOrbitTargetUnderCursor())
+end
+
+function finishOrbitPickTarget()
+    if not orbitPickHolding then
+        return false
+    end
+
+    local target = nil
+    if freecam then
+        target = getOrbitTargetUnderCursor()
+        if not target and orbitPickPreviewVisible then
+            target = orbitPreviewTarget
+        end
+    end
+
+    orbitPickHolding = false
+    orbitPickStartedAt = 0
+    clearOrbitPreview()
+
+    if target then
+        setOrbitTarget(target, true)
+        return true
+    end
+    return false
 end
 
 function setOrbitTarget(target, enableOrbit)
@@ -625,6 +1226,7 @@ function setOrbitTarget(target, enableOrbit)
         offset = Vector3.new(0, 0, dist)
     end
     orbitRadius = math.clamp(dist, CONFIG.orbitMinDistance, CONFIG.orbitMaxDistance)
+    modeSettings.Normal.orbitRadius = orbitRadius
 
     if offset.Magnitude > 0.01 then
         local dir = offset.Unit
@@ -636,10 +1238,24 @@ function setOrbitTarget(target, enableOrbit)
     end
 end
 
-local function clearOrbitTarget()
+function syncOrbitExitState()
+    yaw = wrapAngle(yaw)
+    pitch = wrapAngle(pitch)
+    roll = wrapAngle(roll)
+    yawTarget = yaw
+    pitchTarget = pitch
+    rollTarget = roll
+    if cam then
+        currentCFrame = cam.CFrame
+        targetCFrame = cam.CFrame
+    end
+end
+
+function clearOrbitTarget()
     orbitTarget = nil
     orbitTargetLabel = "None"
     orbitEnabled = false
+    syncOrbitExitState()
 end
 
 function setOrbitEnabled(value)
@@ -651,36 +1267,17 @@ function setOrbitEnabled(value)
         end
     else
         orbitEnabled = false
+        syncOrbitExitState()
     end
 end
 
-local function pickOrbitTarget()
+function pickOrbitTarget()
     if not freecam then
         return
     end
-    local camNow = workspace.CurrentCamera
-    if not camNow then
-        return
-    end
-    local mousePos = UserInputService:GetMouseLocation()
-    local inset = GuiService:GetGuiInset()
-    local x = mousePos.X - inset.X
-    local y = mousePos.Y - inset.Y
-    local ray = camNow:ViewportPointToRay(x, y)
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.IgnoreWater = true
-    local exclude = {}
-    if player.Character then
-        table.insert(exclude, player.Character)
-    end
-    params.FilterDescendantsInstances = exclude
-    local result = workspace:Raycast(ray.Origin, ray.Direction * CONFIG.orbitPickDistance, params)
-    if result and result.Instance then
-        local target = resolveOrbitTarget(result.Instance)
-        if target then
-            setOrbitTarget(target, true)
-        end
+    local target = getOrbitTargetUnderCursor()
+    if target then
+        setOrbitTarget(target, true)
     end
 end
 
@@ -690,16 +1287,26 @@ end
 
 local applyDofSettings
 
-local function toggleFreecam()
+function toggleFreecam()
     freecam = not freecam
+    restoreToken = restoreToken + 1
+
+    local activeCam = refreshCameraReference()
+    if not activeCam then
+        freecam = false
+        return
+    end
 
     if freecam then
+        syncDroneRaycastFilter()
+        dronePropwashPhase = 0
+        resetGyroSpatialState()
         saved = {
             Camera = {
-                CFrame = cam.CFrame,
-                Type = cam.CameraType,
-                Fov = cam.FieldOfView,
-                Subject = cam.CameraSubject,
+                CFrame = activeCam.CFrame,
+                Type = activeCam.CameraType,
+                Fov = activeCam.FieldOfView,
+                Subject = activeCam.CameraSubject,
             },
             Humanoid = humanoid and {
                 WalkSpeed = humanoid.WalkSpeed,
@@ -712,18 +1319,22 @@ local function toggleFreecam()
                 Behavior = UserInputService.MouseBehavior,
                 Icon = UserInputService.MouseIconEnabled,
             },
+            TopbarEnabled = captureTopbarState(),
             CoreGui = captureCoreGuiState(),
             PlayerGui = capturePlayerGuiState(),
         }
 
-        local x, y = cam.CFrame:ToOrientation()
+        local x, y = activeCam.CFrame:ToOrientation()
         pitch, yaw, roll = x, y, 0
-        pitchTarget, yawTarget = pitch, yaw
+        pitchTarget, yawTarget, rollTarget = pitch, yaw, 0
         droneOrient = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0) * CFrame.Angles(0, 0, roll)
+        gyro6dof.currentRot = extractRotationCFrame(activeCam.CFrame)
+        currentCFrame = activeCam.CFrame
+        targetCFrame = activeCam.CFrame
         droneVelocity = Vector3.zero
         droneThrottleState = 0
         droneAngVel = Vector3.zero
-        droneMotorOutput = 0
+        resetDronePhysicsState()
 
         if humanoid then
             humanoid.WalkSpeed = 0
@@ -735,12 +1346,9 @@ local function toggleFreecam()
             humanoid.AutoRotate = false
         end
 
-        cam.CameraType = Enum.CameraType.Scriptable
-        cam.FieldOfView = CONFIG.defaultFov
-        targetFov = CONFIG.defaultFov
-
-        currentCFrame = cam.CFrame
-        targetCFrame = cam.CFrame
+        activeCam.CameraType = Enum.CameraType.Scriptable
+        targetFov = activeCam.FieldOfView
+        activeCam.FieldOfView = targetFov
 
         setCursorUnlocked(false)
         setControlsEnabled(true)
@@ -749,12 +1357,13 @@ local function toggleFreecam()
         applyDofSettings()
     else
         unbindInputs()
+        resetGyroSpatialState()
 
         if saved.Camera then
-            cam.CameraType = saved.Camera.Type
-            cam.CFrame = saved.Camera.CFrame
-            cam.FieldOfView = saved.Camera.Fov
-            cam.CameraSubject = saved.Camera.Subject
+            activeCam.CameraType = saved.Camera.Type
+            activeCam.CFrame = saved.Camera.CFrame
+            activeCam.FieldOfView = saved.Camera.Fov
+            activeCam.CameraSubject = saved.Camera.Subject
         end
 
         if humanoid and saved.Humanoid then
@@ -770,42 +1379,116 @@ local function toggleFreecam()
             pendingRestore = true
         end
 
+        local token = restoreToken
         task.defer(function()
+            if token ~= restoreToken then
+                return
+            end
             UserInputService.MouseBehavior = Enum.MouseBehavior.Default
             UserInputService.MouseIconEnabled = true
 
             task.wait()
+            if token ~= restoreToken then
+                return
+            end
             UserInputService.MouseBehavior = (saved.Mouse and saved.Mouse.Behavior) or Enum.MouseBehavior.Default
             UserInputService.MouseIconEnabled = not (saved.Mouse and saved.Mouse.Icon == false)
         end)
 
         if uiHidden then
             uiHidden = false
-            task.defer(function()
-                applyCoreGuiState(saved.CoreGui, nil)
-                applyPlayerGuiState(saved.PlayerGui, nil)
-            end)
+            applyCoreGuiState(saved.CoreGui, nil)
+            applyPlayerGuiState(saved.PlayerGui, nil)
         end
+        setTopbarEnabled(saved.TopbarEnabled)
         cursorUnlocked = false
         controlsEnabled = true
         if dofEffect then
             dofEffect.Enabled = false
         end
+        destroyOrbitPreview()
         orbitEnabled = false
         droneVelocity = Vector3.zero
         droneThrottleState = 0
         droneOrient = nil
         droneAngVel = Vector3.zero
-        droneMotorOutput = 0
+        resetDronePhysicsState()
+        dronePropwashPhase = 0
     end
 end
 
-local function rotatePortrait90()
-    roll += math.rad(90)
+function rotatePortrait90()
+    roll = roll + math.rad(90)
+    rollTarget = roll
 end
 
-local scriptKilled = false
-local connections = {}
+local activeSliderRow = nil
+local dragging = false
+local dragStart
+local panelStart
+local resizing = false
+local resizeStart
+local resizeStartSize
+
+function clearUiInteractionState()
+    activeSliderRow = nil
+    dragging = false
+    dragStart = nil
+    panelStart = nil
+    resizing = false
+    resizeStart = nil
+    resizeStartSize = nil
+end
+
+function disconnectAllConnections()
+    for _, c in ipairs(connections) do
+        if c and c.Disconnect then
+            pcall(function()
+                c:Disconnect()
+            end)
+        end
+    end
+    connections = {}
+end
+
+function shutdownFreecamScript(reason)
+    if scriptKilled then
+        return
+    end
+
+    scriptKilled = true
+    clearUiInteractionState()
+
+    if freecam then
+        toggleFreecam()
+    else
+        unbindInputs()
+    end
+
+    if dofEffect then
+        dofEffect.Enabled = false
+    end
+    destroyOrbitPreview()
+
+    local gui = uiRefs.gui or playerGui:FindFirstChild("FreecamControlUI")
+    if gui then
+        gui:Destroy()
+    end
+
+    disconnectAllConnections()
+
+    if sharedEnv and sharedEnv[RUN_CLEANUP_KEY] == shutdownFreecamScript then
+        sharedEnv[RUN_CLEANUP_KEY] = nil
+    end
+
+    if reason ~= "rerun" then
+        print("Freecam script cleaned up")
+    end
+end
+
+if sharedEnv then
+    sharedEnv[RUN_CLEANUP_KEY] = shutdownFreecamScript
+end
 
 --// SETTERS
 function setSpeedValue(v)
@@ -850,6 +1533,23 @@ function setZoomStepValue(v)
     zoomStep = math.clamp(v, 0.2, 20)
 end
 
+function setOrbitSpinSpeedDeg(v)
+    local deg = math.clamp(v, 1, 360)
+    local rad = math.rad(deg)
+    modeSettings.Normal.orbitSpinSpeed = rad
+    if currentMode == "Normal" then
+        orbitSpinSpeed = rad
+    end
+end
+
+function setOrbitRadiusValue(v)
+    local dist = math.clamp(v, CONFIG.orbitMinDistance, CONFIG.orbitMaxDistance)
+    modeSettings.Normal.orbitRadius = dist
+    if currentMode == "Normal" then
+        orbitRadius = dist
+    end
+end
+
 function setBoostMultiplierValue(v)
     boostMultiplier = math.clamp(v, 1, 8)
 end
@@ -862,9 +1562,54 @@ function setPitchClampDeg(v)
     pitchClamp = math.rad(math.clamp(v, 30, 89))
 end
 
-function setGyroStrength(v)
-    gyroStrength = math.clamp(v, 0.5, 20)
-    modeSettings.Gyro.gyroStrength = gyroStrength
+function setGyroSensitivity(v)
+    gyroSensitivity = math.clamp(v, 0.1, 50)
+    modeSettings.Gyroscope.gyroSensitivity = gyroSensitivity
+end
+
+function setGyroSmoothness(v)
+    gyroSmoothness = math.clamp(v, 0.01, 1)
+    modeSettings.Gyroscope.gyroSmoothness = gyroSmoothness
+end
+
+function setGyroDeadzone(v)
+    gyroDeadzone = math.clamp(v, 0, 0.1)
+    modeSettings.Gyroscope.gyroDeadzone = gyroDeadzone
+end
+
+function setGyroPollRate(v)
+    local maxPollRate = 60
+    local proxyRemote = ReplicatedStorage:FindFirstChild(GYRO_HTTP_PROXY_NAME)
+    if proxyRemote and proxyRemote:IsA("RemoteFunction") then
+        maxPollRate = GYRO_PROXY_SAFE_POLL_RATE
+    end
+    gyroPollRate = math.clamp(v, 1, maxPollRate)
+    modeSettings.Gyroscope.gyroPollRate = gyroPollRate
+end
+
+function setGyroMoveGain(v)
+    gyro6dof.moveGain = math.clamp(v, 0, 80)
+    modeSettings.Gyroscope.gyroMoveGain = gyro6dof.moveGain
+end
+
+function setGyroTiltGain(v)
+    gyro6dof.tiltGain = math.clamp(v, 0, 4)
+    modeSettings.Gyroscope.gyroTiltGain = gyro6dof.tiltGain
+end
+
+function setGyroMoveDamping(v)
+    gyro6dof.moveDamping = math.clamp(v, 0.1, 30)
+    modeSettings.Gyroscope.gyroMoveDamping = gyro6dof.moveDamping
+end
+
+function setGyroMoveDeadzone(v)
+    gyro6dof.moveDeadzone = math.clamp(v, 0, 3)
+    modeSettings.Gyroscope.gyroMoveDeadzone = gyro6dof.moveDeadzone
+end
+
+function setGyroVerticalAssist(v)
+    gyro6dof.verticalAssist = math.clamp(v, 0, 2)
+    modeSettings.Gyroscope.gyroVerticalAssist = gyro6dof.verticalAssist
 end
 
 function setDroneVertMult(v)
@@ -915,6 +1660,91 @@ end
 function setDronePitchSuper(v)
     dronePitchSuper = math.clamp(v, 0, 1)
     modeSettings.Drone.dronePitchSuper = dronePitchSuper
+end
+
+function setDroneRateType(v)
+    droneRateType = (type(v) == "number" and (v >= 0.5 and "Betaflight" or "Acro")) or v
+    modeSettings.Drone.droneRateType = droneRateType
+end
+
+function setDroneActualCenter(v)
+    droneActualCenter = math.clamp(v, 10, 1000)
+    modeSettings.Drone.droneActualCenter = droneActualCenter
+end
+
+function setDroneActualMaxRate(v)
+    droneActualMaxRate = math.clamp(v, 10, 2000)
+    modeSettings.Drone.droneActualMaxRate = droneActualMaxRate
+end
+
+function setDroneActualExpo(v)
+    droneActualExpo = math.clamp(v, 0, 1)
+    modeSettings.Drone.droneActualExpo = droneActualExpo
+end
+
+function setDroneAngleYawCoord(v)
+    droneAngleYawCoord = math.clamp(v, 0, 1)
+    modeSettings.Drone.droneAngleYawCoord = droneAngleYawCoord
+end
+
+function setDroneMoiPitch(v)
+    droneMoiPitch = math.clamp(v, 0.2, 5)
+    modeSettings.Drone.droneMoiPitch = droneMoiPitch
+end
+
+function setDroneMoiRoll(v)
+    droneMoiRoll = math.clamp(v, 0.2, 5)
+    modeSettings.Drone.droneMoiRoll = droneMoiRoll
+end
+
+function setDroneMoiYaw(v)
+    droneMoiYaw = math.clamp(v, 0.2, 5)
+    modeSettings.Drone.droneMoiYaw = droneMoiYaw
+end
+
+function setDroneDragForward(v)
+    droneDragForward = math.clamp(v, 0, 3)
+    modeSettings.Drone.droneDragForward = droneDragForward
+end
+
+function setDroneDragSideways(v)
+    droneDragSideways = math.clamp(v, 0, 3)
+    modeSettings.Drone.droneDragSideways = droneDragSideways
+end
+
+function setDroneDragVertical(v)
+    droneDragVertical = math.clamp(v, 0, 3)
+    modeSettings.Drone.droneDragVertical = droneDragVertical
+end
+
+function setDroneMotorSpinUp(v)
+    droneMotorSpinUp = math.clamp(v, 1, 30)
+    modeSettings.Drone.droneMotorSpinUp = droneMotorSpinUp
+end
+
+function setDroneMotorSpinDown(v)
+    droneMotorSpinDown = math.clamp(v, 1, 30)
+    modeSettings.Drone.droneMotorSpinDown = droneMotorSpinDown
+end
+
+function setDronePropwashStrength(v)
+    dronePropwashStrength = math.clamp(v, 0, 1)
+    modeSettings.Drone.dronePropwashStrength = dronePropwashStrength
+end
+
+function setDronePropwashZone(v)
+    dronePropwashZone = math.clamp(v, 0, 1)
+    modeSettings.Drone.dronePropwashZone = dronePropwashZone
+end
+
+function setDroneGroundEffectHeight(v)
+    droneGroundEffectHeight = math.clamp(v, 0, 20)
+    modeSettings.Drone.droneGroundEffectHeight = droneGroundEffectHeight
+end
+
+function setDroneGroundEffectStrength(v)
+    droneGroundEffectStrength = math.clamp(v, 0, 0.5)
+    modeSettings.Drone.droneGroundEffectStrength = droneGroundEffectStrength
 end
 
 function setDroneYawSuper(v)
@@ -996,7 +1826,8 @@ function setDroneFlightMode(mode)
     droneVelocity = Vector3.zero
     droneThrottleState = 0
     droneAngVel = Vector3.zero
-    droneMotorOutput = 0
+    resetDronePhysicsState()
+    dronePropwashPhase = 0
     if updateDroneFlightModeUI then
         updateDroneFlightModeUI()
     end
@@ -1028,7 +1859,7 @@ updateDroneFlightModeUI = function()
     end
 end
 
-local function cycleDroneFlightMode(dir)
+function cycleDroneFlightMode(dir)
     local idx = 1
     for i, name in ipairs(droneFlightModeOrder) do
         if name == droneFlightMode then
@@ -1050,74 +1881,24 @@ function setDroneAngleLevelStrength(v)
     droneAngleLevelStrength = math.clamp(v, 0.5, 20)
     modeSettings.Drone.droneAngleLevelStrength = droneAngleLevelStrength
 end
-
-
-function setDroneAngleYawCoord(v)
-    droneAngleYawCoord = math.clamp(v, 0, 1)
-    modeSettings.Drone.droneAngleYawCoord = droneAngleYawCoord
-end
-
-function setDroneMoiPitch(v)
-    droneMoiPitch = math.clamp(v, 0.2, 5)
-    modeSettings.Drone.droneMoiPitch = droneMoiPitch
-end
-
-function setDroneMoiRoll(v)
-    droneMoiRoll = math.clamp(v, 0.2, 5)
-    modeSettings.Drone.droneMoiRoll = droneMoiRoll
-end
-
-function setDroneMoiYaw(v)
-    droneMoiYaw = math.clamp(v, 0.2, 5)
-    modeSettings.Drone.droneMoiYaw = droneMoiYaw
-end
-
-function setDroneDragForward(v)
-    droneDragForward = math.clamp(v, 0, 3)
-    modeSettings.Drone.droneDragForward = droneDragForward
-end
-
-function setDroneDragSideways(v)
-    droneDragSideways = math.clamp(v, 0, 3)
-    modeSettings.Drone.droneDragSideways = droneDragSideways
-end
-
-function setDroneDragVertical(v)
-    droneDragVertical = math.clamp(v, 0, 3)
-    modeSettings.Drone.droneDragVertical = droneDragVertical
-end
-
-function setDroneMotorSpinUp(v)
-    droneMotorSpinUp = math.clamp(v, 1, 30)
-    modeSettings.Drone.droneMotorSpinUp = droneMotorSpinUp
-end
-
-function setDroneMotorSpinDown(v)
-    droneMotorSpinDown = math.clamp(v, 1, 30)
-    modeSettings.Drone.droneMotorSpinDown = droneMotorSpinDown
-end
-
-function setDronePropwashStrength(v)
-    dronePropwashStrength = math.clamp(v, 0, 1)
-    modeSettings.Drone.dronePropwashStrength = dronePropwashStrength
-end
-
-function setDronePropwashZone(v)
-    dronePropwashZone = math.clamp(v, 0, 1)
-    modeSettings.Drone.dronePropwashZone = dronePropwashZone
-end
-
-function setDroneGroundEffectHeight(v)
-    droneGroundEffectHeight = math.clamp(v, 0, 20)
-    modeSettings.Drone.droneGroundEffectHeight = droneGroundEffectHeight
-end
-
-function setDroneGroundEffectStrength(v)
-    droneGroundEffectStrength = math.clamp(v, 0, 0.5)
-    modeSettings.Drone.droneGroundEffectStrength = droneGroundEffectStrength
-end
 --// SETTINGS IMPORT / EXPORT
-local function serializeSettings()
+function encodeSettingValue(value)
+    value = tostring(value or "")
+    value = value:gsub("%%", "%%25")
+    value = value:gsub("|", "%%7C")
+    value = value:gsub("=", "%%3D")
+    return value
+end
+
+function decodeSettingValue(value)
+    value = tostring(value or "")
+    value = value:gsub("%%7C", "|"):gsub("%%7c", "|")
+    value = value:gsub("%%3D", "="):gsub("%%3d", "=")
+    value = value:gsub("%%25", "%%")
+    return value
+end
+
+function serializeSettings()
     local parts = {
         "FCv1",
         "mode="      .. currentMode,
@@ -1131,13 +1912,27 @@ local function serializeSettings()
         "rollSpeed=" .. tostring(math.deg(rollSpeed)),
         "boost="     .. tostring(boostMultiplier),
         "slow="      .. tostring(slowMultiplier),
+        "oSpin="     .. tostring(math.deg(modeSettings.Normal.orbitSpinSpeed or orbitSpinSpeed)),
+        "oRad="      .. tostring(modeSettings.Normal.orbitRadius or orbitRadius),
+        "oSel="      .. tostring(orbitSelectorMode),
         "fov="       .. tostring(targetFov),
         "dofOn="     .. (dofEnabled and "1" or "0"),
+        "dofMode="   .. tostring(dofFocusMode),
         "dofNear="   .. tostring(dofNearIntensity),
         "dofFar="    .. tostring(dofFarIntensity),
         "dofFocus="  .. tostring(dofFocusDistance),
         "dofRadius=" .. tostring(dofInFocusRadius),
-        "gyroStr="   .. tostring(gyroStrength),
+        "dofAutoSpd=" .. tostring(dofAutoFocusSpeed),
+        "gyroUrl="   .. tostring(gyroUrl),
+        "gyroSens="  .. tostring(gyroSensitivity),
+        "gyroSmooth=" .. tostring(gyroSmoothness),
+        "gyroDead="  .. tostring(gyroDeadzone),
+        "gyroPoll="  .. tostring(gyroPollRate),
+        "gyroMoveG=" .. tostring(gyro6dof.moveGain),
+        "gyroTiltG=" .. tostring(gyro6dof.tiltGain),
+        "gyroMoveD=" .. tostring(gyro6dof.moveDamping),
+        "gyroMoveZ=" .. tostring(gyro6dof.moveDeadzone),
+        "gyroVertA=" .. tostring(gyro6dof.verticalAssist),
         "dfm="       .. droneFlightMode,
         "dRollR="    .. tostring(droneRollRate),
         "dPitchR="   .. tostring(dronePitchRate),
@@ -1148,6 +1943,10 @@ local function serializeSettings()
         "dRollS="    .. tostring(droneRollSuper),
         "dPitchS="   .. tostring(dronePitchSuper),
         "dYawS="     .. tostring(droneYawSuper),
+        "dRateT="    .. tostring(droneRateType),
+        "dActCe="    .. tostring(droneActualCenter),
+        "dActMa="    .. tostring(droneActualMaxRate),
+        "dActEx="    .. tostring(droneActualExpo),
         "dRateRsp="  .. tostring(droneRateResponse),
         "dAngDamp="  .. tostring(droneAngularDamping),
         "dThrMid="   .. tostring(droneThrottleMid),
@@ -1155,6 +1954,7 @@ local function serializeSettings()
         "dThrResp="  .. tostring(droneThrustResponse),
         "dThrPow="   .. tostring(droneThrottlePower),
         "dCamTilt="  .. tostring(droneCameraTilt),
+        "dFullRot="  .. (droneFullRotation and "1" or "0"),
         "dGrav="     .. tostring(droneGravity),
         "dHover="    .. tostring(droneHoverThrottle),
         "dDrag="     .. tostring(droneDrag),
@@ -1179,10 +1979,16 @@ local function serializeSettings()
         "dGeHt="     .. tostring(droneGroundEffectHeight),
         "dGeStr="    .. tostring(droneGroundEffectStrength),
     }
+    for i = 2, #parts do
+        local k, v = parts[i]:match("^([^=]+)=(.*)$")
+        if k and v then
+            parts[i] = k .. "=" .. encodeSettingValue(v)
+        end
+    end
     return table.concat(parts, "|")
 end
 
-local function applySettingsString(str)
+function applySettingsString(str)
     str = tostring(str):match("^%s*(.-)%s*$")
     if not str:match("^FCv1|") then
         return false, "Format tidak valid. Pastikan dimulai dengan 'FCv1|'."
@@ -1190,12 +1996,16 @@ local function applySettingsString(str)
     local data = {}
     for pair in str:gmatch("[^|]+") do
         local k, v = pair:match("^([^=]+)=(.*)$")
-        if k and v then data[k] = v end
+        if k and v then data[k] = decodeSettingValue(v) end
     end
     local function num(k, default)
         return tonumber(data[k]) or default
     end
+    local function str(k, default)
+        return data[k] or default
+    end
     -- Mode switch (tanpa reset state)
+    if data.mode == "Gyro" or data.mode == "Aerial" then data.mode = "Gyroscope" end
     if data.mode and modeSettings[data.mode] and data.mode ~= currentMode then
         saveModeSettings(currentMode)
         currentMode = data.mode
@@ -1212,16 +2022,32 @@ local function applySettingsString(str)
     setRollSpeedDeg(num("rollSpeed", math.deg(rollSpeed)))
     setBoostMultiplierValue(num("boost", boostMultiplier))
     setSlowMultiplierValue(num("slow", slowMultiplier))
+    setOrbitSpinSpeedDeg(num("oSpin", math.deg(modeSettings.Normal.orbitSpinSpeed or orbitSpinSpeed)))
+    setOrbitRadiusValue(num("oRad", modeSettings.Normal.orbitRadius or orbitRadius))
+    setOrbitSelectorMode(str("oSel", orbitSelectorMode))
     setFovValue(num("fov", targetFov))
     -- DoF
     dofEnabled      = (num("dofOn", dofEnabled and 1 or 0) == 1)
+    dofFocusMode    = ((str("dofMode", CONFIG.dofFocusMode) or "Manual"):lower() == "auto") and "Auto" or "Manual"
     dofNearIntensity = math.clamp(num("dofNear",   dofNearIntensity),   0, 1)
     dofFarIntensity  = math.clamp(num("dofFar",    dofFarIntensity),    0, 1)
     dofFocusDistance = math.clamp(num("dofFocus",  dofFocusDistance),   0, 500)
     dofInFocusRadius = math.clamp(num("dofRadius", dofInFocusRadius),   0, 500)
+    dofAutoFocusSpeed = math.clamp(num("dofAutoSpd", dofAutoFocusSpeed), 0.5, 100)
+    dofCurrentFocusDistance = dofFocusDistance
     applyDofSettings()
-    -- Gyro
-    setGyroStrength(num("gyroStr", gyroStrength))
+    -- Gyroscope
+    gyroUrl = str("gyroUrl", gyroUrl)
+    modeSettings.Gyroscope.gyroUrl = gyroUrl
+    setGyroSensitivity(num("gyroSens", num("gyroStr", gyroSensitivity)))
+    setGyroSmoothness(num("gyroSmooth", gyroSmoothness))
+    setGyroDeadzone(num("gyroDead", gyroDeadzone))
+    setGyroPollRate(num("gyroPoll", gyroPollRate))
+    setGyroMoveGain(num("gyroMoveG", gyro6dof.moveGain))
+    setGyroTiltGain(num("gyroTiltG", gyro6dof.tiltGain))
+    setGyroMoveDamping(num("gyroMoveD", gyro6dof.moveDamping))
+    setGyroMoveDeadzone(num("gyroMoveZ", gyro6dof.moveDeadzone))
+    setGyroVerticalAssist(num("gyroVertA", gyro6dof.verticalAssist))
     -- Drone flight mode
     if data.dfm and (data.dfm == "Acro" or data.dfm == "Angle" or data.dfm == "3D") then
         setDroneFlightMode(data.dfm)
@@ -1236,6 +2062,10 @@ local function applySettingsString(str)
     setDroneRollSuper(num("dRollS", droneRollSuper))
     setDronePitchSuper(num("dPitchS", dronePitchSuper))
     setDroneYawSuper(num("dYawS", droneYawSuper))
+    setDroneRateType(str("dRateT", droneRateType))
+    setDroneActualCenter(num("dActCe", droneActualCenter))
+    setDroneActualMaxRate(num("dActMa", droneActualMaxRate))
+    setDroneActualExpo(num("dActEx", droneActualExpo))
     setDroneRateResponse(num("dRateRsp", droneRateResponse))
     setDroneAngularDamping(num("dAngDamp", droneAngularDamping))
     setDroneThrottleMid(num("dThrMid", droneThrottleMid))
@@ -1243,6 +2073,8 @@ local function applySettingsString(str)
     setDroneThrustResponse(num("dThrResp", droneThrustResponse))
     setDroneThrottlePower(num("dThrPow", droneThrottlePower))
     setDroneCameraTilt(num("dCamTilt", droneCameraTilt))
+    droneFullRotation = (num("dFullRot", droneFullRotation and 1 or 0) == 1)
+    modeSettings.Drone.droneFullRotation = droneFullRotation
     setDroneGravity(num("dGrav", droneGravity))
     setDroneHoverThrottle(num("dHover", droneHoverThrottle))
     setDroneDrag(num("dDrag", droneDrag))
@@ -1266,11 +2098,12 @@ local function applySettingsString(str)
     setDronePropwashZone(num("dPwZone", dronePropwashZone))
     setDroneGroundEffectHeight(num("dGeHt", droneGroundEffectHeight))
     setDroneGroundEffectStrength(num("dGeStr", droneGroundEffectStrength))
+    saveModeSettings(currentMode)
     refreshUiText()
-    return true, "✔ Settingan berhasil diterapkan!"
+    return true, "OK Settingan berhasil diterapkan!"
 end
 
-local function ensureDofEffect()
+function ensureDofEffect()
     if dofEffect and dofEffect.Parent then
         return dofEffect
     end
@@ -1285,11 +2118,46 @@ local function ensureDofEffect()
     return dofEffect
 end
 
+function resolveDofFocusDistance()
+    if dofFocusMode ~= "Auto" or not dofEnabled or not freecam then
+        return dofFocusDistance
+    end
+    syncDofAutoFocusFilter()
+    local activeCam = cam or workspace.CurrentCamera
+    local sourceCFrame = currentCFrame or targetCFrame or (activeCam and activeCam.CFrame)
+    if not sourceCFrame then
+        return dofFocusDistance
+    end
+    local result = workspace:Raycast(
+        sourceCFrame.Position,
+        sourceCFrame.LookVector * CONFIG.dofMaxDistance,
+        dofAutoFocusRayParams
+    )
+    if result then
+        return math.clamp(result.Distance, 1, CONFIG.dofMaxDistance)
+    end
+    return dofFocusDistance
+end
+
+function updateDofAutoFocus(dt)
+    if dofFocusMode ~= "Auto" or not dofEnabled or not freecam then
+        return
+    end
+    local fx = ensureDofEffect()
+    local targetDistance = resolveDofFocusDistance()
+    local step = math.max(0, dofAutoFocusSpeed) * dt
+    dofCurrentFocusDistance = dofCurrentFocusDistance + math.clamp(targetDistance - dofCurrentFocusDistance, -step, step)
+    fx.FocusDistance = dofCurrentFocusDistance
+end
+
 applyDofSettings = function()
     local fx = ensureDofEffect()
     fx.NearIntensity = dofNearIntensity
     fx.FarIntensity = dofFarIntensity
-    fx.FocusDistance = dofFocusDistance
+    if dofFocusMode == "Manual" then
+        dofCurrentFocusDistance = dofFocusDistance
+    end
+    fx.FocusDistance = dofCurrentFocusDistance
     fx.InFocusRadius = dofInFocusRadius
     fx.Enabled = dofEnabled and freecam
 end
@@ -1319,17 +2187,39 @@ function setDofInFocusRadius(v)
     applyDofSettings()
 end
 
-local function resetDofSettings()
+function setDofAutoFocusSpeed(v)
+    dofAutoFocusSpeed = math.clamp(v, 0.5, 100)
+end
+
+function setDofFocusMode(v)
+    if v ~= "Auto" and v ~= "Manual" then
+        return
+    end
+    dofFocusMode = v
+    if dofFocusMode == "Manual" then
+        dofCurrentFocusDistance = dofFocusDistance
+    end
+    applyDofSettings()
+end
+
+function toggleDofFocusMode()
+    setDofFocusMode(dofFocusMode == "Auto" and "Manual" or "Auto")
+end
+
+function resetDofSettings()
     dofEnabled = CONFIG.dofEnabled
+    dofFocusMode = CONFIG.dofFocusMode
     dofNearIntensity = CONFIG.dofNearIntensity
     dofFarIntensity = CONFIG.dofFarIntensity
     dofFocusDistance = CONFIG.dofFocusDistance
     dofInFocusRadius = CONFIG.dofInFocusRadius
+    dofAutoFocusSpeed = CONFIG.dofAutoFocusSpeed
+    dofCurrentFocusDistance = dofFocusDistance
     applyDofSettings()
 end
 
 --// MODE SYSTEM
-local function applyModeSettings(mode)
+function applyModeSettings(mode)
     local s = modeSettings[mode]
     if not s then return end
     speed           = s.speed
@@ -1342,7 +2232,21 @@ local function applyModeSettings(mode)
     boostMultiplier = s.boostMultiplier
     slowMultiplier  = s.slowMultiplier
     if s.rollSpeed    then rollSpeed    = s.rollSpeed    end
-    if s.gyroStrength then gyroStrength = s.gyroStrength end
+    if mode == "Normal" then
+        if s.orbitSpinSpeed ~= nil then orbitSpinSpeed = s.orbitSpinSpeed end
+        if s.orbitRadius ~= nil then orbitRadius = s.orbitRadius end
+    end
+    if s.gyroUrl ~= nil then gyroUrl = s.gyroUrl end
+    if s.gyroSensitivity ~= nil then gyroSensitivity = s.gyroSensitivity end
+    if s.gyroSmoothness ~= nil then gyroSmoothness = s.gyroSmoothness end
+    if s.gyroDeadzone ~= nil then gyroDeadzone = s.gyroDeadzone end
+    if s.gyroPollRate ~= nil then setGyroPollRate(s.gyroPollRate) end
+    if s.gyroMoveGain ~= nil then gyro6dof.moveGain = s.gyroMoveGain end
+    if s.gyroTiltGain ~= nil then gyro6dof.tiltGain = s.gyroTiltGain end
+    if s.gyroMoveDamping ~= nil then gyro6dof.moveDamping = s.gyroMoveDamping end
+    if s.gyroMoveDeadzone ~= nil then gyro6dof.moveDeadzone = s.gyroMoveDeadzone end
+    if s.gyroVerticalAssist ~= nil then gyro6dof.verticalAssist = s.gyroVerticalAssist end
+    if s.gyroStrength ~= nil then gyroSensitivity = s.gyroStrength end
     if s.verticalSpeedMult ~= nil then droneVertMult = s.verticalSpeedMult end
     if s.droneDeadzone ~= nil then droneDeadzone = s.droneDeadzone end
     if s.droneRollRate ~= nil then droneRollRate = s.droneRollRate end
@@ -1354,6 +2258,23 @@ local function applyModeSettings(mode)
     if s.droneRollSuper ~= nil then droneRollSuper = s.droneRollSuper end
     if s.dronePitchSuper ~= nil then dronePitchSuper = s.dronePitchSuper end
     if s.droneYawSuper ~= nil then droneYawSuper = s.droneYawSuper end
+    if s.droneRateType ~= nil then droneRateType = s.droneRateType end
+    if s.droneActualCenter ~= nil then droneActualCenter = s.droneActualCenter end
+    if s.droneActualMaxRate ~= nil then droneActualMaxRate = s.droneActualMaxRate end
+    if s.droneActualExpo ~= nil then droneActualExpo = s.droneActualExpo end
+    if s.droneAngleYawCoord ~= nil then droneAngleYawCoord = s.droneAngleYawCoord end
+    if s.droneMoiPitch ~= nil then droneMoiPitch = s.droneMoiPitch end
+    if s.droneMoiRoll ~= nil then droneMoiRoll = s.droneMoiRoll end
+    if s.droneMoiYaw ~= nil then droneMoiYaw = s.droneMoiYaw end
+    if s.droneDragForward ~= nil then droneDragForward = s.droneDragForward end
+    if s.droneDragSideways ~= nil then droneDragSideways = s.droneDragSideways end
+    if s.droneDragVertical ~= nil then droneDragVertical = s.droneDragVertical end
+    if s.droneMotorSpinUp ~= nil then droneMotorSpinUp = s.droneMotorSpinUp end
+    if s.droneMotorSpinDown ~= nil then droneMotorSpinDown = s.droneMotorSpinDown end
+    if s.dronePropwashStrength ~= nil then dronePropwashStrength = s.dronePropwashStrength end
+    if s.dronePropwashZone ~= nil then dronePropwashZone = s.dronePropwashZone end
+    if s.droneGroundEffectHeight ~= nil then droneGroundEffectHeight = s.droneGroundEffectHeight end
+    if s.droneGroundEffectStrength ~= nil then droneGroundEffectStrength = s.droneGroundEffectStrength end
     if s.droneRateResponse ~= nil then droneRateResponse = s.droneRateResponse end
     if s.droneAngularDamping ~= nil then droneAngularDamping = s.droneAngularDamping end
     if s.droneThrottleMid ~= nil then droneThrottleMid = s.droneThrottleMid end
@@ -1371,22 +2292,9 @@ local function applyModeSettings(mode)
     if s.droneFlightMode ~= nil then droneFlightMode = s.droneFlightMode end
     if s.droneAngleMaxTilt ~= nil then droneAngleMaxTilt = s.droneAngleMaxTilt end
     if s.droneAngleLevelStrength ~= nil then droneAngleLevelStrength = s.droneAngleLevelStrength end
-    if s.droneAngleYawCoord ~= nil then droneAngleYawCoord = s.droneAngleYawCoord end
-    if s.droneMoiPitch ~= nil then droneMoiPitch = s.droneMoiPitch end
-    if s.droneMoiRoll ~= nil then droneMoiRoll = s.droneMoiRoll end
-    if s.droneMoiYaw ~= nil then droneMoiYaw = s.droneMoiYaw end
-    if s.droneDragForward ~= nil then droneDragForward = s.droneDragForward end
-    if s.droneDragSideways ~= nil then droneDragSideways = s.droneDragSideways end
-    if s.droneDragVertical ~= nil then droneDragVertical = s.droneDragVertical end
-    if s.droneMotorSpinUp ~= nil then droneMotorSpinUp = s.droneMotorSpinUp end
-    if s.droneMotorSpinDown ~= nil then droneMotorSpinDown = s.droneMotorSpinDown end
-    if s.dronePropwashStrength ~= nil then dronePropwashStrength = s.dronePropwashStrength end
-    if s.dronePropwashZone ~= nil then dronePropwashZone = s.dronePropwashZone end
-    if s.droneGroundEffectHeight ~= nil then droneGroundEffectHeight = s.droneGroundEffectHeight end
-    if s.droneGroundEffectStrength ~= nil then droneGroundEffectStrength = s.droneGroundEffectStrength end
 end
 
-local function saveModeSettings(mode)
+function saveModeSettings(mode)
     local s = modeSettings[mode]
     s.speed           = speed
     s.sensitivity     = sensitivity
@@ -1398,7 +2306,22 @@ local function saveModeSettings(mode)
     s.boostMultiplier = boostMultiplier
     s.slowMultiplier  = slowMultiplier
     if mode ~= "Drone" then s.rollSpeed = rollSpeed end
-    if mode == "Gyro"  then s.gyroStrength = gyroStrength end
+    if mode == "Gyroscope" then
+        s.gyroUrl = gyroUrl
+        s.gyroSensitivity = gyroSensitivity
+        s.gyroSmoothness = gyroSmoothness
+        s.gyroDeadzone = gyroDeadzone
+        s.gyroPollRate = gyroPollRate
+        s.gyroMoveGain = gyro6dof.moveGain
+        s.gyroTiltGain = gyro6dof.tiltGain
+        s.gyroMoveDamping = gyro6dof.moveDamping
+        s.gyroMoveDeadzone = gyro6dof.moveDeadzone
+        s.gyroVerticalAssist = gyro6dof.verticalAssist
+    end
+    if mode == "Normal" then
+        s.orbitSpinSpeed = orbitSpinSpeed
+        s.orbitRadius = orbitRadius
+    end
     if mode == "Drone" then
         s.verticalSpeedMult = droneVertMult
         s.droneDeadzone = droneDeadzone
@@ -1411,6 +2334,23 @@ local function saveModeSettings(mode)
         s.droneRollSuper = droneRollSuper
         s.dronePitchSuper = dronePitchSuper
         s.droneYawSuper = droneYawSuper
+        s.droneRateType = droneRateType
+        s.droneActualCenter = droneActualCenter
+        s.droneActualMaxRate = droneActualMaxRate
+        s.droneActualExpo = droneActualExpo
+        s.droneAngleYawCoord = droneAngleYawCoord
+        s.droneMoiPitch = droneMoiPitch
+        s.droneMoiRoll = droneMoiRoll
+        s.droneMoiYaw = droneMoiYaw
+        s.droneDragForward = droneDragForward
+        s.droneDragSideways = droneDragSideways
+        s.droneDragVertical = droneDragVertical
+        s.droneMotorSpinUp = droneMotorSpinUp
+        s.droneMotorSpinDown = droneMotorSpinDown
+        s.dronePropwashStrength = dronePropwashStrength
+        s.dronePropwashZone = dronePropwashZone
+        s.droneGroundEffectHeight = droneGroundEffectHeight
+        s.droneGroundEffectStrength = droneGroundEffectStrength
         s.droneRateResponse = droneRateResponse
         s.droneAngularDamping = droneAngularDamping
         s.droneThrottleMid = droneThrottleMid
@@ -1429,94 +2369,88 @@ local function saveModeSettings(mode)
         s.droneAngleMaxTilt = droneAngleMaxTilt
         s.droneAngleLevelStrength = droneAngleLevelStrength
         s.droneAngleYawCoord = droneAngleYawCoord
-        s.droneMoiPitch = droneMoiPitch
-        s.droneMoiRoll = droneMoiRoll
-        s.droneMoiYaw = droneMoiYaw
-        s.droneDragForward = droneDragForward
-        s.droneDragSideways = droneDragSideways
-        s.droneDragVertical = droneDragVertical
-        s.droneMotorSpinUp = droneMotorSpinUp
-        s.droneMotorSpinDown = droneMotorSpinDown
-        s.dronePropwashStrength = dronePropwashStrength
-        s.dronePropwashZone = dronePropwashZone
-        s.droneGroundEffectHeight = droneGroundEffectHeight
-        s.droneGroundEffectStrength = droneGroundEffectStrength
     end
 end
 
-    local function setMode(mode)
-        if mode == currentMode then return end
-        saveModeSettings(currentMode)
-        currentMode = mode
-        if mode == "Drone" then
-            roll = 0
-        end
-        droneVelocity = Vector3.zero
-        droneThrottleState = 0
-        droneOrient = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0) * CFrame.Angles(0, 0, roll)
-        droneAngVel = Vector3.zero
-        droneMotorOutput = 0
-        applyModeSettings(mode)
+function setMode(mode)
+    if mode == currentMode then return end
+    saveModeSettings(currentMode)
+    if currentMode == "Gyroscope" or mode == "Gyroscope" then
+        resetGyroSpatialState()
     end
+    currentMode = mode
+    if mode == "Drone" then
+        roll = 0
+    elseif mode == "Gyroscope" then
+        rollTarget = roll
+    end
+    droneVelocity = Vector3.zero
+    droneThrottleState = 0
+    droneOrient = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0) * CFrame.Angles(0, 0, roll)
+    droneAngVel = Vector3.zero
+    resetDronePhysicsState()
+    dronePropwashPhase = 0
+    applyModeSettings(mode)
+end
 
-local function resetAllSettings()
+function resetAllSettings()
     -- Reset to mode defaults
     modeSettings.Normal = {
-        speed=60, sensitivity=0.20, posSmooth=10, rotSmooth=12, fovSmooth=12,
+        speed=15, sensitivity=0.15, posSmooth=10, rotSmooth=12, fovSmooth=12,
         zoomStep=3, pitchClamp=math.rad(85), rollSpeed=math.rad(80),
         boostMultiplier=3, slowMultiplier=0.25,
+        orbitSpinSpeed = math.rad(90),
+        orbitRadius = CONFIG.orbitDefaultDistance,
     }
-    modeSettings.Drone = {
-        speed=4.5, sensitivity=0.18, posSmooth=8, rotSmooth=10, fovSmooth=12,
-        zoomStep=3, pitchClamp=math.rad(89),
-        boostMultiplier=3, slowMultiplier=0.25, verticalSpeedMult=1.0,
-        droneDeadzone=0.05,
-        droneRollRate=360, dronePitchRate=360, droneYawRate=240,
-        droneRollExpo=0.30, dronePitchExpo=0.30, droneYawExpo=0.25,
-        droneRollSuper=0.50, dronePitchSuper=0.50, droneYawSuper=0.40,
-        droneRateResponse=10, droneAngularDamping=0.20,
-        droneThrottleMid=0.50, droneThrottleExpo=0.30, droneThrustResponse=5, droneThrottlePower=1.8, droneCameraTilt=20,
-        droneFullRotation=true,
-        droneGravity=196.2, droneHoverThrottle=0.50, droneDrag=0.25, droneQuadDrag=0.05, droneInertia=0.60, droneMass=1.0,
-        droneFlightMode="Acro", droneAngleMaxTilt=45, droneAngleLevelStrength=8,
-        droneAngleYawCoord=0.5,
-        droneMoiPitch=1.0, droneMoiRoll=0.7, droneMoiYaw=1.5,
-        droneDragForward=0.15, droneDragSideways=0.45, droneDragVertical=0.55,
-        droneMotorSpinUp=15, droneMotorSpinDown=10,
-        dronePropwashStrength=0.35, dronePropwashZone=0.40,
-        droneGroundEffectHeight=3.0, droneGroundEffectStrength=0.12,
-    }
-    modeSettings.Gyro = {
-        speed=60, sensitivity=0.25, posSmooth=12, rotSmooth=14, fovSmooth=12,
+    modeSettings.Drone = makeDefaultDroneModeSettings()
+    modeSettings.Gyroscope = {
+        speed=12, sensitivity=0.15, posSmooth=12, rotSmooth=14, fovSmooth=12,
         zoomStep=3, pitchClamp=math.rad(85), rollSpeed=math.rad(80),
-        boostMultiplier=3, slowMultiplier=0.25, gyroStrength=6,
+        boostMultiplier=3, slowMultiplier=0.25,
+        gyroUrl=CONFIG.gyroUrl,
+        gyroSensitivity=CONFIG.gyroSensitivity,
+        gyroSmoothness=CONFIG.gyroSmoothness,
+        gyroDeadzone=CONFIG.gyroDeadzone,
+        gyroPollRate=CONFIG.gyroPollRate,
+        gyroMoveGain=CONFIG.gyroMoveGain,
+        gyroTiltGain=CONFIG.gyroTiltGain,
+        gyroMoveDamping=CONFIG.gyroMoveDamping,
+        gyroMoveDeadzone=CONFIG.gyroMoveDeadzone,
+        gyroVerticalAssist=CONFIG.gyroVerticalAssist,
     }
     applyModeSettings(currentMode)
     setFovValue(CONFIG.defaultFov)
     resetDofSettings()
+    orbitSpinSpeed = math.rad(90)
+    orbitRadius = CONFIG.orbitDefaultDistance
     roll = 0
+    rollTarget = 0
     droneVelocity = Vector3.zero
     droneThrottleState = 0
     droneOrient = nil
     droneAngVel = Vector3.zero
-    droneMotorOutput = 0
+    resetDronePhysicsState()
+    dronePropwashPhase = 0
     orbitEnabled = false
     orbitTarget = nil
     orbitTargetLabel = "None"
-    orbitRadius = CONFIG.orbitDefaultDistance
+    setOrbitSelectorMode(CONFIG.orbitSelectorDefault)
     setControlsEnabled(true)
     if freecam then
         setCursorUnlocked(false)
         if uiHidden then
             setUiHidden(false)
         end
-        cam.FieldOfView = CONFIG.defaultFov
+        if cam then
+            cam.FieldOfView = CONFIG.defaultFov
+        end
     end
     setPanelVisible(true)
+    refreshUiText()
 end
 
 --// SLIDER VISUAL
-local function updateSliderVisual(row, rawValue)
+function updateSliderVisual(row, rawValue)
     if not row then return end
     local t = 0
     if row.max > row.min then
@@ -1529,17 +2463,23 @@ local function updateSliderVisual(row, rawValue)
     end
 end
 
-local function refreshUiText()
+function refreshUiText()
     if not uiRefs.status then return end
     local orbitState = orbitEnabled and "ON" or "OFF"
     local orbitTargetShort = shortenLabel(orbitTargetLabel, 18)
+    local orbitSelectorLabel = orbitSelectorMode
+    local dofState = dofEnabled and "ON" or "OFF"
+    local dofModeLabel = dofFocusMode == "Auto"
+        and string.format("AUTO %.1f/s", dofAutoFocusSpeed)
+        or "MANUAL"
     uiRefs.status.Text = string.format(
-        "FREECAM: %s | CURSOR: %s | UI: %s | CTRL: %s | DOF: %s | ORBIT: %s | MODE: %s%s",
+        "FREECAM: %s | CURSOR: %s | UI: %s | CTRL: %s | DOF: %s/%s | ORBIT: %s | MODE: %s%s",
         freecam and "ON" or "OFF",
         cursorUnlocked and "UNLOCK" or "LOCK",
         uiHidden and "HIDDEN" or "VISIBLE",
         controlsEnabled and "ON" or "OFF",
-        dofEnabled and "ON" or "OFF",
+        dofState,
+        dofModeLabel,
         orbitState,
         currentMode:upper(),
         currentMode == "Drone" and (" ["..droneFlightMode:upper().."]") or ""
@@ -1550,14 +2490,22 @@ local function refreshUiText()
         speedLabel = "TWR"
         speedValue = string.format("%.2f", speed)
     end
-    uiRefs.stats.Text = string.format("%s: %s | FOV: %.1f | Roll: %.1f deg | Sens: %.2f | Orbit: %s (%s)",
+    local lookLabel = "Sens"
+    local lookValue = string.format("%.2f", sensitivity)
+    if currentMode == "Gyroscope" then
+        lookLabel = "Gyro"
+        lookValue = string.format("%s %.0fHz", shortenLabel(gyroLastStatus, 28), gyroPollRate)
+    end
+    uiRefs.stats.Text = string.format("%s: %s | FOV: %.1f | Roll: %.1f deg | %s: %s | Orbit: %s (%s) | Sel: %s",
         speedLabel,
         speedValue,
         cam.FieldOfView,
         math.deg(roll),
-        sensitivity,
+        lookLabel,
+        lookValue,
         orbitState,
-        orbitTargetShort
+        orbitTargetShort,
+        orbitSelectorLabel
     )
     uiRefs.freecamBtn.Text = freecam and "Disable Freecam" or "Enable Freecam"
     uiRefs.cursorBtn.Text = cursorUnlocked and "Lock Cursor" or "Unlock Cursor"
@@ -1565,14 +2513,36 @@ local function refreshUiText()
     if uiRefs.orbitToggleBtn then
         uiRefs.orbitToggleBtn.Text = orbitEnabled and "Orbit Off" or "Orbit On"
     end
+    if uiRefs.orbitSelectorBtn then
+        uiRefs.orbitSelectorBtn.Text = "Selector " .. orbitSelectorLabel
+    end
     if uiRefs.controlsBtn then
         uiRefs.controlsBtn.Text = controlsEnabled and "Controls Lock" or "Controls Unlock"
     end
     if uiRefs.dofToggleBtn then
         uiRefs.dofToggleBtn.Text = dofEnabled and "DOF Off" or "DOF On"
     end
+    if uiRefs.dofFocusModeBtn then
+        uiRefs.dofFocusModeBtn.Text = dofFocusMode == "Auto" and "Focus Manual" or "Focus Auto"
+    end
     if uiRefs.stickOverlayBtn then
         uiRefs.stickOverlayBtn.Text = stickOverlayVisible and "Stick Overlay On" or "Stick Overlay Off"
+    end
+    if uiRefs.gyroInfoLabel then
+        local gyroUrlShort = shortenLabel(gyroUrl, 54)
+        local gyroSourceLabel = gyroResolvedLabel
+            or (gyro6dof.resolvedPlan and gyro6dof.resolvedPlan.label)
+            or "HTTP sensor"
+        local moveLabel = gyro6dof.sample.hasLinearAccel and "linear accel + tilt"
+            or (gyro6dof.sample.hasAccel and "accel-derived + tilt")
+            or "tilt assist"
+        uiRefs.gyroInfoLabel.Text = string.format(
+            "  GYROSCOPE MODE - kamera ikut orientasi HP, gerak dari tilt + akselerasi.\n  Status: %s | Source: %s | Move: %s | URL: %s",
+            gyroLastStatus,
+            gyroSourceLabel,
+            moveLabel,
+            gyroUrlShort
+        )
     end
     updateDroneFlightModeUI()
     -- Update mode buttons
@@ -1604,6 +2574,8 @@ local function refreshUiText()
     if nt then
         if nt.speed     then updateSliderVisual(nt.speed,     speed) end
         if nt.rollSpeed then updateSliderVisual(nt.rollSpeed, math.deg(rollSpeed)) end
+        if nt.orbitSpeed then updateSliderVisual(nt.orbitSpeed, math.deg(modeSettings.Normal.orbitSpinSpeed or orbitSpinSpeed)) end
+        if nt.orbitRadius then updateSliderVisual(nt.orbitRadius, modeSettings.Normal.orbitRadius or orbitRadius) end
         if nt.fov       then updateSliderVisual(nt.fov,       targetFov) end
         if nt.sens      then updateSliderVisual(nt.sens,      sensitivity) end
         if nt.posSmooth then updateSliderVisual(nt.posSmooth, posSmooth) end
@@ -1617,14 +2589,19 @@ local function refreshUiText()
         if nt.dofFar    then updateSliderVisual(nt.dofFar,    dofFarIntensity) end
         if nt.dofFocus  then updateSliderVisual(nt.dofFocus,  dofFocusDistance) end
         if nt.dofRadius then updateSliderVisual(nt.dofRadius, dofInFocusRadius) end
+        if nt.dofAutoSpeed then updateSliderVisual(nt.dofAutoSpeed, dofAutoFocusSpeed) end
     end
     -- Drone tab sliders
     local dt = uiRefs.droneTabRows
     if dt then
-        if dt.speed     then updateSliderVisual(dt.speed,     modeSettings.Drone.speed) end
+        if dt.speed     then updateSliderVisual(dt.speed,     speed) end
         if dt.rollRate  then updateSliderVisual(dt.rollRate,  droneRollRate) end
         if dt.pitchRate then updateSliderVisual(dt.pitchRate, dronePitchRate) end
         if dt.yawRate   then updateSliderVisual(dt.yawRate,   droneYawRate) end
+        if dt.rateType  then updateSliderVisual(dt.rateType,  droneRateType == "Betaflight" and 1 or 0) end
+        if dt.bfCenter  then updateSliderVisual(dt.bfCenter,  droneActualCenter) end
+        if dt.bfMax     then updateSliderVisual(dt.bfMax,     droneActualMaxRate) end
+        if dt.bfExpo    then updateSliderVisual(dt.bfExpo,    droneActualExpo) end
         if dt.rollExpo  then updateSliderVisual(dt.rollExpo,  droneRollExpo) end
         if dt.pitchExpo then updateSliderVisual(dt.pitchExpo, dronePitchExpo) end
         if dt.yawExpo   then updateSliderVisual(dt.yawExpo,   droneYawExpo) end
@@ -1681,24 +2658,32 @@ local function refreshUiText()
             uiRefs.droneAngleSection.Visible = (droneFlightMode == "Angle")
         end
     end
-    -- Gyro tab sliders
-    local gt = uiRefs.gyroTabRows
-    if gt then
-        if gt.speed        then updateSliderVisual(gt.speed,        speed) end
-        if gt.fov          then updateSliderVisual(gt.fov,          targetFov) end
-        if gt.sens         then updateSliderVisual(gt.sens,         sensitivity) end
-        if gt.rotSmooth    then updateSliderVisual(gt.rotSmooth,    rotSmooth) end
-        if gt.fovSmooth    then updateSliderVisual(gt.fovSmooth,    fovSmooth) end
-        if gt.zoomStep     then updateSliderVisual(gt.zoomStep,     zoomStep) end
-        if gt.rollSpeed    then updateSliderVisual(gt.rollSpeed,    math.deg(rollSpeed)) end
-        if gt.boost        then updateSliderVisual(gt.boost,        boostMultiplier) end
-        if gt.slow         then updateSliderVisual(gt.slow,         slowMultiplier) end
-        if gt.gyroStrength then updateSliderVisual(gt.gyroStrength, gyroStrength) end
+    -- Gyroscope tab sliders
+    local at = uiRefs.gyroscopeTabRows
+    if at then
+        if at.speed        then updateSliderVisual(at.speed,        speed) end
+        if at.fov          then updateSliderVisual(at.fov,          targetFov) end
+        if at.sens         then updateSliderVisual(at.sens,         sensitivity) end
+        if at.rotSmooth    then updateSliderVisual(at.rotSmooth,    rotSmooth) end
+        if at.fovSmooth    then updateSliderVisual(at.fovSmooth,    fovSmooth) end
+        if at.zoomStep     then updateSliderVisual(at.zoomStep,     zoomStep) end
+        if at.rollSpeed    then updateSliderVisual(at.rollSpeed,    math.deg(rollSpeed)) end
+        if at.boost        then updateSliderVisual(at.boost,        boostMultiplier) end
+        if at.slow         then updateSliderVisual(at.slow,         slowMultiplier) end
+        if at.gyroSensitivity then updateSliderVisual(at.gyroSensitivity, gyroSensitivity) end
+        if at.gyroSmoothness then updateSliderVisual(at.gyroSmoothness, gyroSmoothness) end
+        if at.gyroDeadzone then updateSliderVisual(at.gyroDeadzone, gyroDeadzone) end
+        if at.gyroPollRate then updateSliderVisual(at.gyroPollRate, gyroPollRate) end
+        if at.gyroMoveGain then updateSliderVisual(at.gyroMoveGain, gyro6dof.moveGain) end
+        if at.gyroTiltGain then updateSliderVisual(at.gyroTiltGain, gyro6dof.tiltGain) end
+        if at.gyroMoveDamping then updateSliderVisual(at.gyroMoveDamping, gyro6dof.moveDamping) end
+        if at.gyroMoveDeadzone then updateSliderVisual(at.gyroMoveDeadzone, gyro6dof.moveDeadzone) end
+        if at.gyroVerticalAssist then updateSliderVisual(at.gyroVerticalAssist, gyro6dof.verticalAssist) end
     end
 end
 
 --// UI
-local function createControlUI()
+function createControlUI()
     local old = playerGui:FindFirstChild("FreecamControlUI")
     if old then old:Destroy() end
 
@@ -1991,7 +2976,7 @@ local function createControlUI()
     local modeColors = {
         Normal = Color3.fromRGB(58, 118, 210),
         Drone  = Color3.fromRGB(48, 150, 100),
-        Gyro   = Color3.fromRGB(148, 72, 190),
+        Gyroscope = Color3.fromRGB(148, 72, 190),
     }
 
     local modeSectionLabel = Instance.new("TextLabel")
@@ -2029,8 +3014,8 @@ local function createControlUI()
     modeRowPad.Parent = modeSelectorRow
 
     local modeBtns = {}
-    local modeOrder = {"Normal", "Drone", "Gyro"}
-    local modeIcons = {Normal = "●", Drone = "◈", Gyro = "⟳"}
+    local modeOrder = {"Normal", "Drone", "Gyroscope"}
+    local modeIcons = {Normal = "●", Drone = "◈", Gyroscope = "⟳"}
 
     local function updateModeButtonsLocal()
         for mName, btn in pairs(modeBtns) do
@@ -2111,14 +3096,9 @@ local function createControlUI()
     gridPad.PaddingBottom = UDim.new(0, 6)
     gridPad.Parent = grid
 
+    clearUiInteractionState()
     local minimized = false
     local normalSize = panel.Size
-    local dragging = false
-    local dragStart
-    local panelStart
-    local resizing = false
-    local resizeStart
-    local resizeStartSize
 
     local function setPanelSizeInternal(width, height)
         panelWidth = math.floor(math.clamp(width, CONFIG.panelMinWidth, CONFIG.panelMaxWidth))
@@ -2148,11 +3128,12 @@ local function createControlUI()
         bStroke.Color = Color3.fromRGB(73, 86, 104)
         bStroke.Transparency = 0.35
         bStroke.Parent = b
-        table.insert(connections, b.MouseButton1Click:Connect(function()
-            if scriptKilled then return end
-            callback()
-            refreshUiText()
-        end))
+    table.insert(connections, b.MouseButton1Click:Connect(function()
+        if scriptKilled then return end
+        callback()
+        if scriptKilled then return end
+        refreshUiText()
+    end))
         return b
     end
 
@@ -2174,9 +3155,13 @@ local function createControlUI()
         if freecam then setOrbitEnabled(not orbitEnabled) end
     end, Color3.fromRGB(60, 86, 92))
     makeButton("Orbit Pick",  function() if freecam then pickOrbitTarget() end end, Color3.fromRGB(60, 86, 92))
+    local orbitSelectorBtn = makeButton("Selector Object", function()
+        cycleOrbitSelectorMode(1)
+    end, Color3.fromRGB(60, 78, 96))
     makeButton("Orbit Self",  function() if freecam then setOrbitTargetSelf() end end, Color3.fromRGB(60, 86, 92))
     makeButton("Orbit Clear", function() clearOrbitTarget() end, Color3.fromRGB(86, 62, 62))
     local dofToggleBtn = makeButton("DOF On", function() setDofEnabled(not dofEnabled) end, Color3.fromRGB(59, 76, 109))
+    local dofFocusModeBtn = makeButton("Focus Auto", function() toggleDofFocusMode() end, Color3.fromRGB(59, 76, 109))
     makeButton("DOF Reset",     function() resetDofSettings() end, Color3.fromRGB(59, 76, 109))
     makeButton("Reset All",     function() resetAllSettings() end, Color3.fromRGB(120, 68, 52))
     makeButton("UI Size +",     function() setPanelSizeInternal(panelWidth + 40, panelHeight + 40) end, Color3.fromRGB(58, 74, 96))
@@ -2445,7 +3430,7 @@ local function createControlUI()
     local settingTabBtns = {}
     local settingTabFrames = {}
 
-    local tabIcons = {Normal = "●", Drone = "◈", Gyro = "⟳"}
+    local tabIcons = {Normal = "●", Drone = "◈", Gyroscope = "⟳"}
 
     for _, tName in ipairs(modeOrder) do
         local tbtn = Instance.new("TextButton")
@@ -2506,8 +3491,6 @@ local function createControlUI()
     end
 
     ---- SLIDER HELPERS ----
-    local activeSliderRow = nil
-
     local function createSliderRow(parent, labelText, minVal, maxVal, getValue, setValue, formatValue, accentColor)
         local row = Instance.new("Frame")
         row.Size = UDim2.new(1, 0, 0, 38)
@@ -2583,16 +3566,23 @@ local function createControlUI()
 
         table.insert(connections, box.FocusLost:Connect(function(enterPressed)
             if scriptKilled then return end
-            if not enterPressed then
-                refreshUiText()
-                return
-            end
             local n = tonumber(box.Text)
             if n then setValue(n) end
             refreshUiText()
         end))
 
-        return { min=minVal, max=maxVal, box=box, fill=fill, knob=knob, format=formatValue }
+        local function update()
+            local v = math.clamp(getValue(), minVal, maxVal)
+            local t = 0
+            if maxVal > minVal then
+                t = (v - minVal) / (maxVal - minVal)
+            end
+            fill.Size = UDim2.new(t, 0, 1, 0)
+            knob.Position = UDim2.new(t, -6, 0.5, -6)
+            if not box:IsFocused() then box.Text = formatValue(v) end
+        end
+
+        return { min=minVal, max=maxVal, box=box, fill=fill, knob=knob, format=formatValue, update=update }
     end
 
     -- Helper to build a labeled slider section header inside a tab frame
@@ -2615,6 +3605,7 @@ local function createControlUI()
     local normalTabRowsRef = {}
     local droneTabRowsRef  = {}
     local gyroTabRowsRef   = {}
+    local gyroInfoLabelRef = nil
 
     ---- NORMAL TAB ----
     do
@@ -2674,6 +3665,14 @@ local function createControlUI()
             function() return math.deg(rollSpeed) end, setRollSpeedDeg,
             function(v) return string.format("%.0f", v) end, Color3.fromRGB(180, 100, 255))
 
+        makeTabSection(tf, "Orbit", Color3.fromRGB(120, 210, 255))
+        normalTabRows.orbitSpeed = createSliderRow(tf, "Orbit Speed deg/s", 1, 360,
+            function() return math.deg(modeSettings.Normal.orbitSpinSpeed or orbitSpinSpeed) end, setOrbitSpinSpeedDeg,
+            function(v) return string.format("%.0f", v) end, Color3.fromRGB(120, 210, 255))
+        normalTabRows.orbitRadius = createSliderRow(tf, "Orbit Radius", CONFIG.orbitMinDistance, CONFIG.orbitMaxDistance,
+            function() return modeSettings.Normal.orbitRadius or orbitRadius end, setOrbitRadiusValue,
+            function(v) return string.format("%.1f", v) end, Color3.fromRGB(120, 210, 255))
+
         makeTabSection(tf, "Depth of Field", Color3.fromRGB(100, 200, 220))
         normalTabRows.dofNear = createSliderRow(tf, "DOF Near", 0, 1,
             function() return dofNearIntensity end, setDofNearIntensity,
@@ -2686,6 +3685,9 @@ local function createControlUI()
             function(v) return string.format("%.1f", v) end, Color3.fromRGB(80, 200, 200))
         normalTabRows.dofRadius = createSliderRow(tf, "DOF Radius", 0, CONFIG.dofMaxDistance,
             function() return dofInFocusRadius end, setDofInFocusRadius,
+            function(v) return string.format("%.1f", v) end, Color3.fromRGB(80, 200, 200))
+        normalTabRows.dofAutoSpeed = createSliderRow(tf, "DOF Auto Spd", 0.5, 100,
+            function() return dofAutoFocusSpeed end, setDofAutoFocusSpeed,
             function(v) return string.format("%.1f", v) end, Color3.fromRGB(80, 200, 200))
 
         normalTabRowsRef = normalTabRows
@@ -2866,6 +3868,20 @@ local function createControlUI()
             function() return droneYawRate end, setDroneYawRate,
             function(v) return string.format("%.0f", v) end, accent)
 
+        makeTabSection(tf, "Betaflight Rates", Color3.fromRGB(255, 100, 100))
+        droneTabRows.rateType = createSliderRow(tf, "Enable BF (1=Yes)", 0, 1,
+            function() return droneRateType == "Betaflight" and 1 or 0 end, setDroneRateType,
+            function(v) return (v >= 0.5) and "Yes" or "No" end, Color3.fromRGB(255, 100, 100))
+        droneTabRows.bfCenter = createSliderRow(tf, "BF Center", 10, 1000,
+            function() return droneActualCenter end, setDroneActualCenter,
+            function(v) return string.format("%.0f", v) end, Color3.fromRGB(255, 100, 100))
+        droneTabRows.bfMax = createSliderRow(tf, "BF Max", 10, 2000,
+            function() return droneActualMaxRate end, setDroneActualMaxRate,
+            function(v) return string.format("%.0f", v) end, Color3.fromRGB(255, 100, 100))
+        droneTabRows.bfExpo = createSliderRow(tf, "BF Expo", 0, 1,
+            function() return droneActualExpo end, setDroneActualExpo,
+            function(v) return string.format("%.2f", v) end, Color3.fromRGB(255, 100, 100))
+
         makeTabSection(tf, "Expo", accent)
         droneTabRows.rollExpo = createSliderRow(tf, "Roll Expo", 0, 1,
             function() return droneRollExpo end, setDroneRollExpo,
@@ -2908,8 +3924,8 @@ local function createControlUI()
             function(v) return string.format("%.2f", v) end, Color3.fromRGB(180, 160, 255))
 
         makeTabSection(tf, "Throttle", accent)
-        droneTabRows.speed = createSliderRow(tf, "TWR (Max)", 1, 12,
-            function() return modeSettings.Drone.speed end, setDroneTwr,
+        droneTabRows.speed = createSliderRow(tf, "TWR (Max)", 1, 20,
+            function() return speed end, setDroneTwr,
             function(v) return string.format("%.2f", v) end, accent)
         droneTabRows.thrustMult = createSliderRow(tf, "Thrust x", 0.1, 3,
             function() return droneVertMult end, setDroneVertMult,
@@ -3006,6 +4022,7 @@ local function createControlUI()
             function() return rotSmooth end, setRotSmoothValue,
             function(v) return string.format("%.1f", v) end, accent)
 
+
         droneTabRowsRef = droneTabRows
         droneTabRowsRef._angleTabRows        = angleTabRows
         droneTabRowsRef._angleSectionFrame   = angleSectionFrame
@@ -3014,9 +4031,9 @@ local function createControlUI()
         droneTabRowsRef._updateFlightModeBtns = updateFlightModeBtns
     end
 
-    ---- GYRO TAB ----
+    ---- GYROSCOPE TAB ----
     do
-        local tf = settingTabFrames.Gyro
+        local tf = settingTabFrames.Gyroscope
         local listLayout = Instance.new("UIListLayout")
         listLayout.SortOrder = Enum.SortOrder.LayoutOrder
         listLayout.Padding = UDim.new(0, 2)
@@ -3031,7 +4048,7 @@ local function createControlUI()
         local accent = Color3.fromRGB(190, 110, 255)
 
         local gyroInfo = Instance.new("TextLabel")
-        gyroInfo.Size = UDim2.new(1, -12, 0, 32)
+        gyroInfo.Size = UDim2.new(1, -12, 0, 46)
         gyroInfo.BackgroundColor3 = Color3.fromRGB(40, 28, 55)
         gyroInfo.BorderSizePixel = 0
         gyroInfo.Font = Enum.Font.Code
@@ -3039,7 +4056,7 @@ local function createControlUI()
         gyroInfo.TextColor3 = Color3.fromRGB(200, 150, 255)
         gyroInfo.TextXAlignment = Enum.TextXAlignment.Left
         gyroInfo.TextYAlignment = Enum.TextYAlignment.Center
-        gyroInfo.Text = "  ⟳ GYRO MODE  — Gerakan 6DOF penuh\n  Roll otomatis kembali ke 0 (seperti gyroscope)"
+        gyroInfo.Text = "  GYROSCOPE MODE - kamera ikut orientasi HP, gerak dari tilt + akselerasi.\n  X = recenter pose | Space/Ctrl = naik/turun | URL: " .. gyroUrl
         gyroInfo.Parent = tf
         Instance.new("UICorner", gyroInfo).CornerRadius = UDim.new(0, 7)
 
@@ -3049,9 +4066,6 @@ local function createControlUI()
         gyroTabRows.speed = createSliderRow(tf, "Speed", CONFIG.minSpeed, CONFIG.maxSpeed,
             function() return speed end, setSpeedValue,
             function(v) return string.format("%.0f", v) end, accent)
-        gyroTabRows.sens = createSliderRow(tf, "Sensitivity", 0.02, 1.5,
-            function() return sensitivity end, setSensitivityValue,
-            function(v) return string.format("%.2f", v) end, accent)
         gyroTabRows.boost = createSliderRow(tf, "Boost ×", 1, 8,
             function() return boostMultiplier end, setBoostMultiplierValue,
             function(v) return string.format("%.2f", v) end, Color3.fromRGB(255, 180, 60))
@@ -3059,10 +4073,36 @@ local function createControlUI()
             function() return slowMultiplier end, setSlowMultiplierValue,
             function(v) return string.format("%.2f", v) end, Color3.fromRGB(100, 200, 130))
 
-        makeTabSection(tf, "Gyro Stabilizer", accent)
-        gyroTabRows.gyroStrength = createSliderRow(tf, "Gyro Strength", 0.5, 20,
-            function() return gyroStrength end, setGyroStrength,
+        makeTabSection(tf, "Gyroscope Sensor", accent)
+        gyroTabRows.gyroSensitivity = createSliderRow(tf, "Gyro Sens", 0.1, 50,
+            function() return gyroSensitivity end, setGyroSensitivity,
             function(v) return string.format("%.1f", v) end, Color3.fromRGB(230, 130, 255))
+        gyroTabRows.gyroSmoothness = createSliderRow(tf, "Smoothness", 0.01, 1,
+            function() return gyroSmoothness end, setGyroSmoothness,
+            function(v) return string.format("%.3f", v) end, accent)
+        gyroTabRows.gyroDeadzone = createSliderRow(tf, "Deadzone", 0, 0.1,
+            function() return gyroDeadzone end, setGyroDeadzone,
+            function(v) return string.format("%.4f", v) end, accent)
+        gyroTabRows.gyroPollRate = createSliderRow(tf, "Poll Hz", 1, 60,
+            function() return gyroPollRate end, setGyroPollRate,
+            function(v) return string.format("%.0f", v) end, accent)
+
+        makeTabSection(tf, "6DoF Motion", accent)
+        gyroTabRows.gyroMoveGain = createSliderRow(tf, "Linear Gain", 0, 80,
+            function() return gyro6dof.moveGain end, setGyroMoveGain,
+            function(v) return string.format("%.1f", v) end, Color3.fromRGB(110, 215, 255))
+        gyroTabRows.gyroTiltGain = createSliderRow(tf, "Tilt Drive", 0, 4,
+            function() return gyro6dof.tiltGain end, setGyroTiltGain,
+            function(v) return string.format("%.2f", v) end, Color3.fromRGB(120, 235, 185))
+        gyroTabRows.gyroMoveDamping = createSliderRow(tf, "Move Damping", 0.1, 30,
+            function() return gyro6dof.moveDamping end, setGyroMoveDamping,
+            function(v) return string.format("%.2f", v) end, Color3.fromRGB(255, 175, 90))
+        gyroTabRows.gyroMoveDeadzone = createSliderRow(tf, "Accel Deadzone", 0, 3,
+            function() return gyro6dof.moveDeadzone end, setGyroMoveDeadzone,
+            function(v) return string.format("%.2f", v) end, Color3.fromRGB(255, 205, 110))
+        gyroTabRows.gyroVerticalAssist = createSliderRow(tf, "Vert Accel", 0, 2,
+            function() return gyro6dof.verticalAssist end, setGyroVerticalAssist,
+            function(v) return string.format("%.2f", v) end, Color3.fromRGB(190, 190, 255))
 
         makeTabSection(tf, "Camera", accent)
         gyroTabRows.fov = createSliderRow(tf, "FOV", CONFIG.minFov, CONFIG.maxFov,
@@ -3087,6 +4127,7 @@ local function createControlUI()
             function(v) return string.format("%.1f", v) end, accent)
 
         gyroTabRowsRef = gyroTabRows
+        gyroInfoLabelRef = gyroInfo
     end
 
     ---- KEYBINDS SECTION ----
@@ -3102,7 +4143,7 @@ local function createControlUI()
     keybindsSectionLabel.Parent = content
 
     local keyList = Instance.new("TextLabel")
-    keyList.Size = UDim2.new(1, 0, 0, 155)
+    keyList.Size = UDim2.new(1, 0, 0, 205)
     keyList.LayoutOrder = 11
     keyList.BackgroundColor3 = Color3.fromRGB(25, 29, 36)
     keyList.BorderSizePixel = 0
@@ -3117,11 +4158,14 @@ local function createControlUI()
         "Roll: Z/C | Roll Reset: X | Portrait +90: R",
         "Cursor: M | Hide UI: U | Stick Overlay: I",
         "FOV Zoom: Mouse Wheel",
-        "Orbit: O toggle | T pick | G self | Y clear",
-        "Speed/TWR: +/- keys | Reset: 0",
+        "Orbit: A/D left-right | W/S up-down | Ctrl+Wheel distance",
+        "Orbit: O toggle | T release-pick / hold outline | G self | Y clear",
+        "Selector: B/button = Object / Player / Model / Part",
+        "Selector: Mesh / Tool-Accessory",
+        "Speed/TWR: PgUp/PgDn or -/= | Reset: 0",
         "Gamepad: Select = toggle | Y = flight mode",
         "Drone FPV: LS roll/throttle | RS pitch/yaw",
-        "Gyro: Roll auto-levels back to 0",
+        "Gyroscope: HP attitude + tilt/accel | X recenter | Space/Ctrl up/down",
     }, "\n")
     keyList.Parent = content
     Instance.new("UICorner", keyList).CornerRadius = UDim.new(0, 9)
@@ -3144,9 +4188,7 @@ local function createControlUI()
     table.insert(connections, UserInputService.InputEnded:Connect(function(input)
         if scriptKilled then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            activeSliderRow = nil
-            resizing = false
-            dragging = false
+            clearUiInteractionState()
         end
     end))
 
@@ -3213,19 +4255,11 @@ local function createControlUI()
     end))
 
     table.insert(connections, exitBtn.MouseButton1Click:Connect(function()
-        if scriptKilled then return end
-        scriptKilled = true
-        if freecam then toggleFreecam() end
-        if dofEffect then dofEffect.Enabled = false end
-        for _, c in ipairs(connections) do
-            if c and c.Disconnect then c:Disconnect() end
-        end
-        connections = {}
-        gui:Destroy()
-        print("Freecam script killed via UI")
+        shutdownFreecamScript("ui")
     end))
 
     uiRefs = {
+        gui              = gui,
         panel            = panel,
         clampPanel       = clampPanelToViewport,
         status           = status,
@@ -3235,7 +4269,9 @@ local function createControlUI()
         uiBtn            = uiBtn,
         controlsBtn      = controlsBtn,
         orbitToggleBtn   = orbitToggleBtn,
+        orbitSelectorBtn = orbitSelectorBtn,
         dofToggleBtn     = dofToggleBtn,
+        dofFocusModeBtn  = dofFocusModeBtn,
         stickOverlayBtn  = stickOverlayBtn,
         modeBtns         = modeBtns,
         modeColors       = modeColors,
@@ -3243,7 +4279,8 @@ local function createControlUI()
         activeSettingsTab = activeSettingsTab,
         normalTabRows    = normalTabRowsRef,
         droneTabRows     = droneTabRowsRef,
-        gyroTabRows      = gyroTabRowsRef,
+        gyroscopeTabRows = gyroTabRowsRef,
+        gyroInfoLabel    = gyroInfoLabelRef,
         droneAngleSection      = droneTabRowsRef._angleSectionFrame,
         updateFlightModeBtns   = droneTabRowsRef._updateFlightModeBtns,
         stickOverlay     = stickOverlay,
@@ -3299,7 +4336,12 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp
     end
 
     if input.KeyCode == CONFIG.orbitPickKey then
-        pickOrbitTarget()
+        beginOrbitPickTarget()
+        return
+    end
+
+    if input.KeyCode == CONFIG.orbitSelectorKey then
+        cycleOrbitSelectorMode(1)
         refreshUiText()
         return
     end
@@ -3343,6 +4385,14 @@ table.insert(connections, UserInputService.InputBegan:Connect(function(input, gp
 
 end))
 
+table.insert(connections, UserInputService.InputEnded:Connect(function(input, _)
+    if scriptKilled then return end
+    if input.KeyCode ~= CONFIG.orbitPickKey then return end
+
+    finishOrbitPickTarget()
+    refreshUiText()
+end))
+
 --// GAMEPAD SHORTCUTS
 table.insert(connections, UserInputService.InputBegan:Connect(function(input)
     if scriptKilled then return end
@@ -3367,10 +4417,15 @@ end))
 table.insert(connections, UserInputService.InputChanged:Connect(function(input)
     if scriptKilled then return end
     if freecam and controlsEnabled and not cursorUnlocked and input.UserInputType == Enum.UserInputType.MouseWheel then
-        targetFov = math.clamp(
-            targetFov - input.Position.Z * zoomStep,
-            CONFIG.minFov, CONFIG.maxFov
-        )
+        local ctrlDown = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+        if ctrlDown and currentMode == "Normal" and orbitEnabled and orbitTarget then
+            setOrbitRadiusValue(orbitRadius - input.Position.Z * 2)
+        else
+            targetFov = math.clamp(
+                targetFov - input.Position.Z * zoomStep,
+                CONFIG.minFov, CONFIG.maxFov
+            )
+        end
         refreshUiText()
     end
 end))
@@ -3378,6 +4433,8 @@ end))
 table.insert(connections, UserInputService.WindowFocusReleased:Connect(function()
     if scriptKilled then return end
     if not freecam then return end
+    clearUiInteractionState()
+    destroyOrbitPreview()
     for k in pairs(moveState) do
         moveState[k] = false
     end
@@ -3386,21 +4443,1093 @@ table.insert(connections, UserInputService.WindowFocusReleased:Connect(function(
     end
 end))
 
-local function smooth(k, dt)
+function smooth(k, dt)
     return 1 - math.exp(-k * dt)
+end
+
+function pushUniqueText(list, seen, value)
+    if type(value) == "string" and value ~= "" and not seen[value] then
+        seen[value] = true
+        table.insert(list, value)
+    end
+end
+
+function applySignedDeadzone(value, deadzone)
+    if math.abs(value) <= deadzone then
+        return 0
+    end
+    return value
+end
+
+function normalizeQuaternion(w, x, y, z)
+    local mag = math.sqrt(w * w + x * x + y * y + z * z)
+    if mag <= 1e-6 then
+        return 1, 0, 0, 0
+    end
+    return w / mag, x / mag, y / mag, z / mag
+end
+
+function rotateVectorByQuaternion(v, w, x, y, z)
+    local qv = Vector3.new(x, y, z)
+    local t = qv:Cross(v) * 2
+    return v + t * w + qv:Cross(t)
+end
+
+function buildPhonePoseFromQuaternion(w, x, y, z)
+    w, x, y, z = normalizeQuaternion(w, x, y, z)
+    local right = rotateVectorByQuaternion(BODY_RIGHT, w, x, y, z)
+    local up = rotateVectorByQuaternion(BODY_UP, w, x, y, z)
+    local screenOut = rotateVectorByQuaternion(Vector3.new(0, 0, 1), w, x, y, z)
+    return CFrame.fromMatrix(Vector3.zero, right, up, screenOut)
+end
+
+function buildPhonePoseFromEulerDegrees(yawDeg, pitchDeg, rollDeg)
+    local yawRad = math.rad(-(tonumber(yawDeg) or 0))
+    local pitchRad = math.rad(-(tonumber(pitchDeg) or 0))
+    local rollRad = math.rad(tonumber(rollDeg) or 0)
+    return CFrame.Angles(0, yawRad, 0)
+        * CFrame.Angles(pitchRad, 0, 0)
+        * CFrame.Angles(0, 0, rollRad)
+end
+
+function readPhyphoxSourceTriplet(inputs, sourceName, label)
+    if type(inputs) ~= "table" then
+        return nil
+    end
+
+    local sourceNameLower = string.lower(sourceName)
+    for _, input in ipairs(inputs) do
+        if type(input) == "table"
+            and type(input.source) == "string"
+            and string.lower(input.source) == sourceNameLower
+            and type(input.outputs) == "table" then
+            for _, output in ipairs(input.outputs) do
+                if type(output) == "table"
+                    and type(output.x) == "string"
+                    and type(output.y) == "string"
+                    and type(output.z) == "string" then
+                    return {
+                        x = output.x,
+                        y = output.y,
+                        z = output.z,
+                        label = label,
+                    }
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function readPhyphoxAttitudeOutput(inputs)
+    if type(inputs) ~= "table" then
+        return nil
+    end
+
+    for _, input in ipairs(inputs) do
+        if type(input) == "table"
+            and type(input.source) == "string"
+            and string.lower(input.source) == "attitude"
+            and type(input.outputs) == "table" then
+            for _, output in ipairs(input.outputs) do
+                if type(output) == "table"
+                    and type(output.abs) == "string"
+                    and type(output.x) == "string"
+                    and type(output.y) == "string"
+                    and type(output.z) == "string" then
+                    return {
+                        w = output.abs,
+                        x = output.x,
+                        y = output.y,
+                        z = output.z,
+                        label = "Phyphox attitude",
+                    }
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function buildPhyphoxBufferSet(bufferNames)
+    local bufferSet = {}
+    if type(bufferNames) ~= "table" then
+        return bufferSet
+    end
+
+    for _, name in ipairs(bufferNames) do
+        if type(name) == "string" and name ~= "" then
+            bufferSet[name] = true
+        end
+    end
+    return bufferSet
+end
+
+function choosePhyphoxTriplet(bufferSet, candidates, label)
+    if type(bufferSet) ~= "table" or type(candidates) ~= "table" then
+        return nil
+    end
+
+    for _, candidate in ipairs(candidates) do
+        if bufferSet[candidate.x] and bufferSet[candidate.y] and bufferSet[candidate.z] then
+            return {
+                x = candidate.x,
+                y = candidate.y,
+                z = candidate.z,
+                label = candidate.label or label,
+            }
+        end
+    end
+    return nil
+end
+
+function choosePhyphoxQuaternion(bufferSet, candidates, label)
+    if type(bufferSet) ~= "table" or type(candidates) ~= "table" then
+        return nil
+    end
+
+    for _, candidate in ipairs(candidates) do
+        if bufferSet[candidate.w] and bufferSet[candidate.x] and bufferSet[candidate.y] and bufferSet[candidate.z] then
+            return {
+                w = candidate.w,
+                x = candidate.x,
+                y = candidate.y,
+                z = candidate.z,
+                label = candidate.label or label,
+            }
+        end
+    end
+    return nil
+end
+
+function choosePhyphoxEuler(bufferSet)
+    if type(bufferSet) ~= "table" then
+        return nil
+    end
+
+    if bufferSet.yaw and bufferSet.pitch and bufferSet.roll then
+        return {
+            yaw = "yaw",
+            pitch = "pitch",
+            roll = "roll",
+            label = "Phyphox yaw/pitch/roll",
+        }
+    end
+    return nil
+end
+
+function getGyroHttpProxyRemote()
+    local remote = gyroHttpProxyRemote
+    if remote and remote.Parent then
+        return remote
+    end
+
+    local found = ReplicatedStorage:FindFirstChild(GYRO_HTTP_PROXY_NAME)
+    if found and found:IsA("RemoteFunction") then
+        gyroHttpProxyRemote = found
+        return found
+    end
+    return nil
+end
+
+function getGyroMaxPollRate()
+    if getGyroHttpProxyRemote() then
+        return GYRO_PROXY_SAFE_POLL_RATE
+    end
+    return 60
+end
+
+function getGyroRequestAdapter()
+    if type(request) == "function" then
+        return request, "request"
+    elseif type(http_request) == "function" then
+        return http_request, "http_request"
+    elseif syn and type(syn.request) == "function" then
+        return syn.request, "syn.request"
+    elseif http and type(http.request) == "function" then
+        return http.request, "http.request"
+    end
+
+    local proxyRemote = getGyroHttpProxyRemote()
+    if proxyRemote then
+        return function(options)
+            return proxyRemote:InvokeServer(options)
+        end, "ServerProxy"
+    end
+
+    return false, "Need FreecamGyroHttpProxy"
+end
+
+function performGyroHttpGet(requestFn, source, url)
+    if requestFn == false then
+        return false, nil, source
+    end
+
+    local ok, response
+    if requestFn then
+        ok, response = pcall(function()
+            return requestFn({
+                Url = url,
+                Method = "GET",
+                Headers = {
+                    ["Accept"] = "application/json",
+                },
+            })
+        end)
+        if not ok then
+            return false, nil, source .. " Error"
+        end
+
+        if type(response) == "table" then
+            local success = response.Success
+            local statusCode = tonumber(response.StatusCode or response.Status)
+            if success == false or (statusCode and statusCode >= 400) then
+                return false,
+                    response.Body or response.body or response.Response or response.response,
+                    response.Error or response.StatusMessage or (source .. " Error")
+            end
+            return true,
+                response.Body or response.body or response.Response or response.response,
+                nil
+        end
+
+        return true, response, nil
+    end
+    return false, nil, source .. " Error"
+end
+
+function setGyroRawRates(x, y, z, units)
+    gyroRawX = tonumber(x) or 0
+    gyroRawY = tonumber(y) or 0
+    gyroRawZ = tonumber(z) or 0
+    gyroRateToRadScale = units == "rad" and 1 or math.rad(1)
+end
+
+function getLastNumericValue(value)
+    if type(value) == "number" then
+        return value
+    end
+    if type(value) == "string" then
+        return tonumber(value)
+    end
+    if type(value) ~= "table" then
+        return nil
+    end
+
+    local list = value.buffer
+    if type(list) ~= "table" then
+        list = value
+    end
+
+    for i = #list, 1, -1 do
+        local numeric = tonumber(list[i])
+        if numeric ~= nil then
+            return numeric
+        end
+    end
+    return nil
+end
+
+function scorePhyphoxGyroPrefix(prefix)
+    if prefix == "" then
+        return 12
+    end
+    if prefix:find("gyr", 1, true) or prefix:find("gyro", 1, true) then
+        return 120
+    end
+    if prefix:find("rotationrate", 1, true) or prefix:find("rotrate", 1, true) then
+        return 110
+    end
+    if prefix:find("angularvelocity", 1, true) or prefix:find("angvel", 1, true) then
+        return 100
+    end
+    if prefix:find("omega", 1, true) then
+        return 90
+    end
+    if prefix == "w" then
+        return 60
+    end
+    if prefix:find("acc", 1, true)
+        or prefix:find("mag", 1, true)
+        or prefix:find("quat", 1, true)
+        or prefix:find("lin", 1, true)
+        or prefix:find("grav", 1, true) then
+        return -1
+    end
+    return 0
+end
+
+function inferPhyphoxGyroKeysFromNames(names)
+    if type(names) ~= "table" or #names == 0 then
+        return nil
+    end
+
+    local groups = {}
+    for _, rawName in ipairs(names) do
+        if type(rawName) == "string" and rawName ~= "" then
+            local normalized = rawName:lower():gsub("[^%w]", "")
+            local axis = normalized:match("([xyz])$")
+            if axis then
+                local prefix = normalized:sub(1, #normalized - 1)
+                local score = scorePhyphoxGyroPrefix(prefix)
+                if score >= 0 then
+                    local group = groups[prefix]
+                    if not group then
+                        group = {score = score}
+                        groups[prefix] = group
+                    end
+                    group[axis] = rawName
+                    if score > group.score then
+                        group.score = score
+                    end
+                end
+            end
+        end
+    end
+
+    local best
+    local bestScore = -math.huge
+    for prefix, group in pairs(groups) do
+        if group.x and group.y and group.z then
+            local score = group.score
+            if prefix == "" and #names <= 6 then
+                score = score + 25
+            end
+            if score > bestScore then
+                bestScore = score
+                best = {
+                    x = group.x,
+                    y = group.y,
+                    z = group.z,
+                    label = prefix == "" and "Phyphox x/y/z" or ("Phyphox " .. prefix .. "*"),
+                }
+            end
+        end
+    end
+
+    return best
+end
+
+function buildPhyphoxBaseUrl(url)
+    if type(url) ~= "string" or url == "" then
+        return nil
+    end
+    local baseUrl = url:gsub("%?.*$", "")
+    baseUrl = baseUrl:gsub("/+$", "")
+    baseUrl = baseUrl:gsub("/get$", "")
+    baseUrl = baseUrl:gsub("/config$", "")
+    return baseUrl
+end
+
+function buildPhyphoxGetUrl(baseUrl, keys)
+    if type(baseUrl) ~= "string" or baseUrl == "" then
+        return nil
+    end
+    if type(keys) ~= "table" then
+        return nil
+    end
+
+    local queryKeys = {}
+    local seen = {}
+    if keys.x and keys.y and keys.z then
+        pushUniqueText(queryKeys, seen, keys.x)
+        pushUniqueText(queryKeys, seen, keys.y)
+        pushUniqueText(queryKeys, seen, keys.z)
+        pushUniqueText(queryKeys, seen, keys.w)
+        pushUniqueText(queryKeys, seen, keys.abs)
+        pushUniqueText(queryKeys, seen, keys.yaw)
+        pushUniqueText(queryKeys, seen, keys.pitch)
+        pushUniqueText(queryKeys, seen, keys.roll)
+    else
+        for _, key in ipairs(keys) do
+            pushUniqueText(queryKeys, seen, key)
+        end
+    end
+
+    if #queryKeys == 0 then
+        return nil
+    end
+
+    local encoded = {}
+    for _, key in ipairs(queryKeys) do
+        table.insert(encoded, HttpService:UrlEncode(key))
+    end
+    return baseUrl .. "/get?" .. table.concat(encoded, "&")
+end
+
+function collectPhyphoxSensorPlan(requestFn, source, inputUrl)
+    local baseUrl = buildPhyphoxBaseUrl(inputUrl)
+    if not baseUrl then
+        return nil, nil
+    end
+
+    local ok, body = performGyroHttpGet(requestFn, source, baseUrl .. "/config")
+    if not ok or type(body) ~= "string" then
+        return baseUrl, nil
+    end
+
+    local decodeOk, configData = pcall(function()
+        return HttpService:JSONDecode(body)
+    end)
+    if not decodeOk or type(configData) ~= "table" then
+        return baseUrl, nil
+    end
+
+    local bufferNames = {}
+    if type(configData.buffers) == "table" then
+        for _, entry in ipairs(configData.buffers) do
+            if type(entry) == "table" and type(entry.name) == "string" then
+                table.insert(bufferNames, entry.name)
+            elseif type(entry) == "string" then
+                table.insert(bufferNames, entry)
+            end
+        end
+    end
+
+    local bufferSet = buildPhyphoxBufferSet(bufferNames)
+    local inputs = configData.inputs
+    local plan = {
+        queryKeys = {},
+        label = "Phyphox",
+    }
+    local seen = {}
+
+    plan.gyro = readPhyphoxSourceTriplet(inputs, "gyroscope", "Phyphox gyroscope input")
+        or choosePhyphoxTriplet(bufferSet, PHYPHOX_GYRO_BUFFER_FALLBACKS, "Phyphox gyroscope")
+
+    plan.linearAccel = readPhyphoxSourceTriplet(inputs, "linear_acceleration", "Phyphox linear acceleration")
+        or choosePhyphoxTriplet(bufferSet, {
+            {x = "linX", y = "linY", z = "linZ"},
+            {x = "linearAccX", y = "linearAccY", z = "linearAccZ"},
+            {x = "accNoGX", y = "accNoGY", z = "accNoGZ"},
+        }, "Phyphox linear acceleration")
+
+    plan.accel = readPhyphoxSourceTriplet(inputs, "accelerometer", "Phyphox accelerometer")
+        or choosePhyphoxTriplet(bufferSet, {
+            {x = "accX", y = "accY", z = "accZ"},
+            {x = "accelerationX", y = "accelerationY", z = "accelerationZ"},
+        }, "Phyphox accelerometer")
+
+    plan.gravity = readPhyphoxSourceTriplet(inputs, "gravity", "Phyphox gravity")
+        or choosePhyphoxTriplet(bufferSet, {
+            {x = "gravX", y = "gravY", z = "gravZ"},
+            {x = "gravityX", y = "gravityY", z = "gravityZ"},
+        }, "Phyphox gravity")
+
+    plan.attitude = choosePhyphoxQuaternion(bufferSet, {
+            {w = "attW", x = "attX", y = "attY", z = "attZ"},
+            {w = "quatW", x = "quatX", y = "quatY", z = "quatZ"},
+            {w = "attWIn", x = "attXIn", y = "attYIn", z = "attZIn"},
+        }, "Phyphox attitude")
+        or readPhyphoxAttitudeOutput(inputs)
+
+    plan.euler = choosePhyphoxEuler(bufferSet)
+
+    local function appendTriplet(spec)
+        if spec then
+            pushUniqueText(plan.queryKeys, seen, spec.x)
+            pushUniqueText(plan.queryKeys, seen, spec.y)
+            pushUniqueText(plan.queryKeys, seen, spec.z)
+        end
+    end
+
+    appendTriplet(plan.gyro)
+    appendTriplet(plan.linearAccel)
+    appendTriplet(plan.accel)
+    appendTriplet(plan.gravity)
+    if plan.attitude then
+        pushUniqueText(plan.queryKeys, seen, plan.attitude.w)
+        pushUniqueText(plan.queryKeys, seen, plan.attitude.x)
+        pushUniqueText(plan.queryKeys, seen, plan.attitude.y)
+        pushUniqueText(plan.queryKeys, seen, plan.attitude.z)
+    end
+    if plan.euler then
+        pushUniqueText(plan.queryKeys, seen, plan.euler.yaw)
+        pushUniqueText(plan.queryKeys, seen, plan.euler.pitch)
+        pushUniqueText(plan.queryKeys, seen, plan.euler.roll)
+    end
+
+    if #plan.queryKeys == 0 then
+        return baseUrl, nil
+    end
+
+    if plan.attitude and (plan.linearAccel or plan.accel) then
+        plan.label = "Phyphox 6DoF"
+    elseif plan.attitude then
+        plan.label = "Phyphox attitude"
+    elseif plan.gyro then
+        plan.label = plan.gyro.label or "Phyphox gyroscope"
+    end
+
+    return baseUrl, plan
+end
+
+function readBufferTriplet(bufferData, spec)
+    if type(bufferData) ~= "table" or type(spec) ~= "table" then
+        return nil
+    end
+
+    local x = getLastNumericValue(bufferData[spec.x])
+    local y = getLastNumericValue(bufferData[spec.y])
+    local z = getLastNumericValue(bufferData[spec.z])
+    if x == nil or y == nil or z == nil then
+        return nil
+    end
+    return Vector3.new(x, y, z)
+end
+
+function readBufferQuaternion(bufferData, spec)
+    if type(bufferData) ~= "table" or type(spec) ~= "table" then
+        return nil
+    end
+
+    local w = getLastNumericValue(bufferData[spec.w])
+    local x = getLastNumericValue(bufferData[spec.x])
+    local y = getLastNumericValue(bufferData[spec.y])
+    local z = getLastNumericValue(bufferData[spec.z])
+    if w == nil or x == nil or y == nil or z == nil then
+        return nil
+    end
+
+    return buildPhonePoseFromQuaternion(w, x, y, z)
+end
+
+function readBufferEuler(bufferData, spec)
+    if type(bufferData) ~= "table" or type(spec) ~= "table" then
+        return nil
+    end
+
+    local yawDeg = getLastNumericValue(bufferData[spec.yaw])
+    local pitchDeg = getLastNumericValue(bufferData[spec.pitch])
+    local rollDeg = getLastNumericValue(bufferData[spec.roll])
+    if yawDeg == nil or pitchDeg == nil or rollDeg == nil then
+        return nil
+    end
+
+    return Vector3.new(yawDeg, pitchDeg, rollDeg)
+end
+
+function collectPhyphoxGyroCandidates(requestFn, source, inputUrl)
+    local baseUrl = buildPhyphoxBaseUrl(inputUrl)
+    if not baseUrl then
+        return nil, {}
+    end
+
+    local candidates = {}
+    local seen = {}
+    local function pushCandidate(keys)
+        if type(keys) ~= "table" or not keys.x or not keys.y or not keys.z then
+            return
+        end
+        local signature = string.lower(keys.x) .. "|" .. string.lower(keys.y) .. "|" .. string.lower(keys.z)
+        if seen[signature] then
+            return
+        end
+        seen[signature] = true
+        table.insert(candidates, keys)
+    end
+
+    local ok, body = performGyroHttpGet(requestFn, source, baseUrl .. "/config")
+    if ok and type(body) == "string" then
+        local decodeOk, configData = pcall(function()
+            return HttpService:JSONDecode(body)
+        end)
+        if decodeOk and type(configData) == "table" then
+            if type(configData.inputs) == "table" then
+                for _, input in ipairs(configData.inputs) do
+                    if type(input) == "table"
+                        and type(input.source) == "string"
+                        and string.lower(input.source) == "gyroscope"
+                        and type(input.outputs) == "table" then
+                        for _, output in ipairs(input.outputs) do
+                            if type(output) == "table" and output.x and output.y and output.z then
+                                pushCandidate({
+                                    x = output.x,
+                                    y = output.y,
+                                    z = output.z,
+                                    label = "Phyphox gyroscope input",
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+
+            if type(configData.buffers) == "table" then
+                local bufferNames = {}
+                for _, entry in ipairs(configData.buffers) do
+                    if type(entry) == "table" and type(entry.name) == "string" then
+                        table.insert(bufferNames, entry.name)
+                    elseif type(entry) == "string" then
+                        table.insert(bufferNames, entry)
+                    end
+                end
+                pushCandidate(inferPhyphoxGyroKeysFromNames(bufferNames))
+            end
+        end
+    end
+
+    for _, fallback in ipairs(PHYPHOX_GYRO_BUFFER_FALLBACKS) do
+        pushCandidate(fallback)
+    end
+
+    return baseUrl, candidates
+end
+
+function tryApplyGyroPayload(data)
+    if type(data) ~= "table" then
+        return false, nil
+    end
+
+    local sample = gyro6dof.sample
+    sample.hasAttitude = false
+    sample.hasAccel = false
+    sample.hasLinearAccel = false
+    sample.hasGravity = false
+    sample.hasEuler = false
+    sample.attitudeCFrame = nil
+    sample.accel = Vector3.zero
+    sample.linearAccel = Vector3.zero
+    sample.gravity = Vector3.zero
+    sample.eulerDeg = Vector3.zero
+
+    local hasGyroRates = false
+    local hasAnySpatialSample = false
+
+    if type(data.rotationRate) == "table" then
+        local rr = data.rotationRate
+        -- Browser DeviceMotion rotationRate usually reports deg/s.
+        setGyroRawRates(
+            rr.alpha or rr.Alpha or rr.z or rr.Z,
+            rr.beta or rr.Beta or rr.x or rr.X,
+            rr.gamma or rr.Gamma or rr.y or rr.Y,
+            "deg"
+        )
+        hasGyroRates = true
+        return true, "rotationRate"
+    end
+
+    if type(data.gyro) == "table" then
+        setGyroRawRates(
+            data.gyro.x or data.gyro.X or data.gyro.alpha or data.gyro.Alpha or data.gyro.z or data.gyro.Z,
+            data.gyro.y or data.gyro.Y or data.gyro.beta or data.gyro.Beta or data.gyro.x or data.gyro.X,
+            data.gyro.z or data.gyro.Z or data.gyro.gamma or data.gyro.Gamma or data.gyro.y or data.gyro.Y,
+            "deg"
+        )
+        hasGyroRates = true
+        return true, "gyro"
+    end
+
+    if type(data.attitude) == "table" then
+        local att = data.attitude
+        if tonumber(att.w or att.W or att.abs or att.Abs) ~= nil
+            and tonumber(att.x or att.X) ~= nil
+            and tonumber(att.y or att.Y) ~= nil
+            and tonumber(att.z or att.Z) ~= nil then
+            sample.attitudeCFrame = buildPhonePoseFromQuaternion(
+                tonumber(att.w or att.W or att.abs or att.Abs) or 1,
+                tonumber(att.x or att.X) or 0,
+                tonumber(att.y or att.Y) or 0,
+                tonumber(att.z or att.Z) or 0
+            )
+            sample.hasAttitude = true
+            hasAnySpatialSample = true
+        end
+    elseif type(data.quaternion) == "table" then
+        local quat = data.quaternion
+        if tonumber(quat.w or quat.W or quat.abs or quat.Abs) ~= nil
+            and tonumber(quat.x or quat.X) ~= nil
+            and tonumber(quat.y or quat.Y) ~= nil
+            and tonumber(quat.z or quat.Z) ~= nil then
+            sample.attitudeCFrame = buildPhonePoseFromQuaternion(
+                tonumber(quat.w or quat.W or quat.abs or quat.Abs) or 1,
+                tonumber(quat.x or quat.X) or 0,
+                tonumber(quat.y or quat.Y) or 0,
+                tonumber(quat.z or quat.Z) or 0
+            )
+            sample.hasAttitude = true
+            hasAnySpatialSample = true
+        end
+    end
+
+    if not sample.hasAttitude then
+        local topYawDeg = tonumber(data.yaw or data.Yaw)
+        local topPitchDeg = tonumber(data.pitch or data.Pitch)
+        local topRollDeg = tonumber(data.roll or data.Roll)
+        if topYawDeg ~= nil and topPitchDeg ~= nil and topRollDeg ~= nil then
+            sample.eulerDeg = Vector3.new(topYawDeg, topPitchDeg, topRollDeg)
+            sample.hasEuler = true
+            sample.attitudeCFrame = buildPhonePoseFromEulerDegrees(topYawDeg, topPitchDeg, topRollDeg)
+            sample.hasAttitude = true
+            hasAnySpatialSample = true
+        end
+    end
+
+    local directX = tonumber(data.x or data.X or data.gx or data.GX or data.alpha or data.Alpha)
+    local directY = tonumber(data.y or data.Y or data.gy or data.GY or data.beta or data.Beta)
+    local directZ = tonumber(data.z or data.Z or data.gz or data.GZ or data.gamma or data.Gamma)
+    if directX ~= nil and directY ~= nil and directZ ~= nil then
+        setGyroRawRates(directX, directY, directZ, "deg")
+        hasGyroRates = true
+        return true, "xyz"
+    end
+
+    if type(data.buffer) == "table" then
+        local bufferNames = {}
+        for name in pairs(data.buffer) do
+            table.insert(bufferNames, name)
+        end
+
+        local plan = gyro6dof.resolvedPlan or {}
+        local gyroVec = readBufferTriplet(data.buffer, plan.gyro)
+        if not gyroVec then
+            local inferredGyro = inferPhyphoxGyroKeysFromNames(bufferNames)
+            gyroVec = readBufferTriplet(data.buffer, inferredGyro)
+            if not plan.gyro and inferredGyro then
+                plan.gyro = inferredGyro
+            end
+        end
+        if gyroVec then
+            setGyroRawRates(gyroVec.X, gyroVec.Y, gyroVec.Z, "rad")
+            hasGyroRates = true
+            hasAnySpatialSample = true
+        end
+
+        local linearVec = readBufferTriplet(data.buffer, plan.linearAccel)
+        if linearVec then
+            sample.linearAccel = linearVec
+            sample.hasLinearAccel = true
+            hasAnySpatialSample = true
+        end
+
+        local accelVec = readBufferTriplet(data.buffer, plan.accel)
+        if accelVec then
+            sample.accel = accelVec
+            sample.hasAccel = true
+            hasAnySpatialSample = true
+        end
+
+        local gravityVec = readBufferTriplet(data.buffer, plan.gravity)
+        if gravityVec then
+            sample.gravity = gravityVec
+            sample.hasGravity = true
+            hasAnySpatialSample = true
+        end
+
+        local attitudeCFrame = readBufferQuaternion(data.buffer, plan.attitude)
+        if attitudeCFrame then
+            sample.attitudeCFrame = attitudeCFrame
+            sample.hasAttitude = true
+            hasAnySpatialSample = true
+        end
+
+        local eulerDeg = readBufferEuler(data.buffer, plan.euler)
+        if eulerDeg then
+            sample.eulerDeg = eulerDeg
+            sample.hasEuler = true
+            hasAnySpatialSample = true
+            if not sample.hasAttitude then
+                sample.attitudeCFrame = buildPhonePoseFromEulerDegrees(eulerDeg.X, eulerDeg.Y, eulerDeg.Z)
+                sample.hasAttitude = true
+            end
+        end
+    end
+
+    if not hasGyroRates then
+        setGyroRawRates(0, 0, 0, "rad")
+    end
+
+    if hasAnySpatialSample or hasGyroRates then
+        local label = gyroResolvedLabel
+            or (gyro6dof.resolvedPlan and gyro6dof.resolvedPlan.label)
+            or (sample.hasAttitude and "attitude")
+            or "sensor"
+        return true, label
+    end
+
+    return false, nil
+end
+
+function requestGyroSample()
+    if gyroFetchInFlight then return end
+    if type(gyroUrl) ~= "string" or gyroUrl == "" then
+        gyroLastStatus = "No URL"
+        return
+    end
+
+    if gyroResolvedFromInputUrl ~= gyroUrl then
+        gyroResolvedUrl = nil
+        gyroResolvedLabel = nil
+        gyroResolvedFromInputUrl = gyroUrl
+        gyro6dof.resolvedPlan = nil
+    end
+
+    gyroFetchInFlight = true
+    task.spawn(function()
+        local requestFn, source = getGyroRequestAdapter()
+        local function zeroGyro(statusText)
+            gyroRawX = 0
+            gyroRawY = 0
+            gyroRawZ = 0
+            gyroLastStatus = statusText
+        end
+
+        if requestFn == false then
+            zeroGyro(source)
+            gyroFetchInFlight = false
+            return
+        end
+
+        local function decodeAndApply(body)
+            if type(body) ~= "string" then
+                return false, nil, "Bad Response"
+            end
+            local decodeOk, data = pcall(function()
+                return HttpService:JSONDecode(body)
+            end)
+            if not decodeOk or type(data) ~= "table" then
+                return false, nil, "Bad JSON"
+            end
+
+            local applied, label = tryApplyGyroPayload(data)
+            if applied then
+                gyroLastSampleAt = os.clock()
+                return true, label, nil
+            end
+
+            return false, data, nil
+        end
+
+        local requestUrl = gyroResolvedUrl
+        if not requestUrl then
+            local baseUrl, plan = collectPhyphoxSensorPlan(requestFn, source, gyroUrl)
+            if baseUrl and plan then
+                local candidateUrl = buildPhyphoxGetUrl(baseUrl, plan.queryKeys)
+                if candidateUrl then
+                    gyroResolvedUrl = candidateUrl
+                    gyroResolvedLabel = plan.label or "Phyphox"
+                    gyro6dof.resolvedPlan = plan
+
+                    local candidateOk, candidateBody = performGyroHttpGet(requestFn, source, candidateUrl)
+                    if candidateOk then
+                        local candidateApplied, candidateLabel = decodeAndApply(candidateBody)
+                        if candidateApplied then
+                            local label = candidateLabel or gyroResolvedLabel
+                            gyroLastStatus = source .. " OK" .. (label and (" | " .. label) or "")
+                            gyroFetchInFlight = false
+                            return
+                        end
+                        requestUrl = candidateUrl
+                    end
+                end
+            end
+        end
+        requestUrl = requestUrl or gyroUrl
+        local ok, body, transportStatus = performGyroHttpGet(requestFn, source, requestUrl)
+        if ok then
+            local applied, payloadOrLabel, decodeStatus = decodeAndApply(body)
+            if applied then
+                local label = payloadOrLabel
+                if requestUrl == gyroResolvedUrl and gyroResolvedLabel then
+                    label = gyroResolvedLabel
+                end
+                gyroLastStatus = source .. " OK" .. (label and (" | " .. label) or "")
+                gyroFetchInFlight = false
+                return
+            end
+
+            local data = payloadOrLabel
+            local looksLikePhyphox = type(data) == "table"
+                and type(data.status) == "table"
+                and type(data.buffer) == "table"
+
+            if looksLikePhyphox then
+                local baseUrl, plan = collectPhyphoxSensorPlan(requestFn, source, gyroUrl)
+                if baseUrl and plan then
+                    local candidateUrl = buildPhyphoxGetUrl(baseUrl, plan.queryKeys)
+                    if candidateUrl and candidateUrl ~= requestUrl then
+                        local candidateOk, candidateBody = performGyroHttpGet(requestFn, source, candidateUrl)
+                        if candidateOk then
+                            gyroResolvedUrl = candidateUrl
+                            gyroResolvedLabel = plan.label or "Phyphox"
+                            gyro6dof.resolvedPlan = plan
+                            local candidateApplied = decodeAndApply(candidateBody)
+                            if candidateApplied then
+                                gyroLastStatus = source .. " OK | " .. gyroResolvedLabel
+                                gyroFetchInFlight = false
+                                return
+                            end
+                        end
+                    end
+                end
+
+                if data.status.measuring == false then
+                    zeroGyro("Phyphox paused")
+                else
+                    zeroGyro("Phyphox buffer kosong")
+                end
+            else
+                zeroGyro(decodeStatus or (source .. " Error"))
+            end
+        else
+            zeroGyro(transportStatus or (source .. " Error"))
+        end
+
+        gyroFetchInFlight = false
+    end)
+end
+
+function updateGyroPolling(dt)
+    gyroPollAccum = gyroPollAccum + dt
+    local interval = 1 / math.max(1, gyroPollRate)
+    if gyroPollAccum >= interval then
+        gyroPollAccum = 0
+        requestGyroSample()
+    end
+end
+
+function readGyroDelta(steps, frameDt)
+    local gx = gyroRawX
+    local gy = -gyroRawY
+    local gz = gyroRawZ
+    local staleAfter = math.max(0.5, 3 / math.max(1, gyroPollRate))
+    if gyroLastSampleAt > 0 and os.clock() - gyroLastSampleAt > staleAfter then
+        gx = 0
+        gy = 0
+        gz = 0
+    end
+
+    if math.abs(gx) < gyroDeadzone then gx = 0 end
+    if math.abs(gy) < gyroDeadzone then gy = 0 end
+    if math.abs(gz) < gyroDeadzone then gz = 0 end
+    gx = math.clamp(gx, -GYRO_MAX_RATE_DPS, GYRO_MAX_RATE_DPS)
+    gy = math.clamp(gy, -GYRO_MAX_RATE_DPS, GYRO_MAX_RATE_DPS)
+    gz = math.clamp(gz, -GYRO_MAX_RATE_DPS, GYRO_MAX_RATE_DPS)
+
+    local alpha = math.clamp(gyroSmoothness, 0.01, 1)
+    gyroSmoothX = gyroSmoothX + (gx - gyroSmoothX) * alpha
+    gyroSmoothY = gyroSmoothY + (gy - gyroSmoothY) * alpha
+    gyroSmoothZ = gyroSmoothZ + (gz - gyroSmoothZ) * alpha
+
+    -- Normalize source units during parsing, then integrate the angular rate here.
+    local dtStep = math.clamp((frameDt or 0) / math.max(steps, 1), 0, 0.05)
+    local effectiveSensitivity = gyroSensitivity * GYRO_SENSOR_TO_CAMERA_SCALE
+    return gyroSmoothX * effectiveSensitivity * gyroRateToRadScale * dtStep,
+        gyroSmoothY * effectiveSensitivity * gyroRateToRadScale * dtStep,
+        gyroSmoothZ * effectiveSensitivity * GYRO_ROLL_FACTOR * gyroRateToRadScale * dtStep
+end
+
+function getGyroLinearAccelerationDevice()
+    local sample = gyro6dof.sample
+    if sample.hasLinearAccel then
+        return sample.linearAccel
+    end
+
+    if not sample.hasAccel then
+        return nil
+    end
+
+    if sample.hasGravity then
+        return sample.accel - sample.gravity
+    end
+
+    if sample.hasAttitude and sample.attitudeCFrame then
+        local gravityDevice = sample.attitudeCFrame:VectorToObjectSpace(Vector3.new(0, -gyro6dof.earthGravityMs2, 0))
+        return sample.accel - gravityDevice
+    end
+
+    return nil
+end
+
+function ensureGyroPoseCalibrated(referenceRot)
+    local sample = gyro6dof.sample
+    if not sample.hasAttitude or not sample.attitudeCFrame then
+        return false
+    end
+
+    if not gyro6dof.basePhone or not gyro6dof.baseCamera then
+        gyro6dof.basePhone = sample.attitudeCFrame
+        gyro6dof.baseCamera = referenceRot or CFrame.new()
+        gyro6dof.currentRot = referenceRot or gyro6dof.currentRot or CFrame.new()
+    end
+
+    return true
+end
+
+function getGyroDesiredRotation()
+    local sample = gyro6dof.sample
+    if not sample.hasAttitude or not sample.attitudeCFrame then
+        return nil
+    end
+    if not gyro6dof.basePhone or not gyro6dof.baseCamera then
+        return nil
+    end
+
+    local relativePhone = gyro6dof.basePhone:ToObjectSpace(sample.attitudeCFrame)
+    return gyro6dof.baseCamera * relativePhone
+end
+
+function updateGyroMotionVector(camRot, speedNow, dt)
+    local motionWorld = Vector3.zero
+    local linearDevice = getGyroLinearAccelerationDevice()
+    if linearDevice and camRot then
+        local accelLocal = Vector3.new(
+            applySignedDeadzone(linearDevice.X, gyro6dof.moveDeadzone),
+            applySignedDeadzone(linearDevice.Y, gyro6dof.moveDeadzone) * gyro6dof.verticalAssist,
+            -applySignedDeadzone(linearDevice.Z, gyro6dof.moveDeadzone)
+        ) * gyro6dof.moveGain
+        local accelWorld = camRot:VectorToWorldSpace(accelLocal)
+        gyro6dof.worldVelocity = gyro6dof.worldVelocity + accelWorld * dt
+    end
+
+    local dampingAlpha = smooth(gyro6dof.moveDamping, dt)
+    gyro6dof.worldVelocity = gyro6dof.worldVelocity + (Vector3.zero - gyro6dof.worldVelocity) * dampingAlpha
+    local maxVel = math.max(speedNow * 3, speedNow + gyro6dof.moveGain)
+    local velMag = gyro6dof.worldVelocity.Magnitude
+    if velMag > maxVel and velMag > 1e-5 then
+        gyro6dof.worldVelocity = gyro6dof.worldVelocity.Unit * maxVel
+    end
+    motionWorld = motionWorld + gyro6dof.worldVelocity
+
+    if camRot and gyro6dof.basePhone and gyro6dof.sample.hasAttitude and gyro6dof.sample.attitudeCFrame then
+        local relativePhone = gyro6dof.basePhone:ToObjectSpace(gyro6dof.sample.attitudeCFrame)
+        local relPitch, _, relRoll = relativePhone:ToOrientation()
+        local function tiltAxis(angle)
+            local absAngle = math.abs(angle)
+            if absAngle <= gyro6dof.tiltDeadzoneRad then
+                return 0
+            end
+            local scaled = math.clamp(
+                (absAngle - gyro6dof.tiltDeadzoneRad) / math.max(1e-4, (gyro6dof.maxTiltRad - gyro6dof.tiltDeadzoneRad)),
+                0,
+                1
+            )
+            return angle < 0 and -scaled or scaled
+        end
+
+        local tiltLocal = Vector3.new(
+            tiltAxis(relRoll),
+            0,
+            -tiltAxis(relPitch)
+        ) * (speedNow * gyro6dof.tiltGain)
+        motionWorld = motionWorld + camRot:VectorToWorldSpace(tiltLocal)
+    end
+
+    return motionWorld
 end
 
 local MAX_STEP = 1 / 60
 local UI_UPDATE_DT = 1 / 20
 local uiUpdateAccum = 0
 
-local function wrapAngle(a)
-    local twoPi = math.pi * 2
-    a = (a + math.pi) % twoPi
+function wrapAngle(a)
+    a = (a + math.pi) % TWO_PI
     return a - math.pi
 end
 
-local function applyDeadzone(v, dz)
+function applyDeadzone(v, dz)
     local av = math.abs(v)
     if av <= dz then
         return 0
@@ -3409,11 +5538,11 @@ local function applyDeadzone(v, dz)
     return (v < 0 and -scaled or scaled)
 end
 
-local function applyExpo(v, expo)
+function applyExpo(v, expo)
     return v * (1 - expo) + (v * v * v) * expo
 end
 
-local function applySuperRate(v, superRate)
+function applySuperRate(v, superRate)
     if superRate <= 0 then
         return v
     end
@@ -3422,13 +5551,21 @@ local function applySuperRate(v, superRate)
     return v / denom
 end
 
-local function applyRates(v, expo, superRate)
+function applyRates(v, expo, superRate)
     local out = applyExpo(v, expo)
     out = applySuperRate(out, superRate)
     return math.clamp(out, -1, 1)
 end
 
-local function applyThrottleCurve(x, mid, expo)
+function applyActualRates(stickInput, centerSens, maxRate, expo)
+    local stickAbs = math.abs(stickInput)
+    local centerRate = centerSens
+    local stickFactor = stickAbs * (1 - expo) + (stickAbs * stickAbs * stickAbs) * expo
+    local rate = centerRate + (maxRate - centerRate) * stickFactor
+    return rate * stickInput
+end
+
+function applyThrottleCurve(x, mid, expo)
     x = math.clamp(x, 0, 1)
     mid = math.clamp(mid, 0.05, 0.95)
     expo = math.clamp(expo, 0, 1)
@@ -3443,7 +5580,122 @@ local function applyThrottleCurve(x, mid, expo)
     end
 end
 
-local function getGamepadSticks()
+function motorCommandToThrustFraction(command)
+    command = math.clamp(command, 0, 1)
+    return math.pow(command, DRONE_MOTOR_THRUST_EXPONENT)
+end
+
+function thrustFractionToMotorCommand(fraction)
+    fraction = math.clamp(fraction, 0, 1)
+    return math.pow(fraction, 1 / DRONE_MOTOR_THRUST_EXPONENT)
+end
+
+function thrustRatioToMotorCommand(thrustRatio, thrustToWeight)
+    local maxRatio = math.max(0.1, thrustToWeight)
+    return thrustFractionToMotorCommand(thrustRatio / maxRatio)
+end
+
+function computeDroneDragForce(rot, velocity)
+    local bodyForward = rot:VectorToWorldSpace(BODY_FORWARD)
+    local bodyRight = rot:VectorToWorldSpace(BODY_RIGHT)
+    local bodyUp = rot:VectorToWorldSpace(BODY_UP)
+
+    local velForward = velocity:Dot(bodyForward)
+    local velRight = velocity:Dot(bodyRight)
+    local velUp = velocity:Dot(bodyUp)
+
+    local dragScalar = math.max(0, droneDrag)
+    local dragForce = -(bodyForward * velForward * droneDragForward
+        + bodyRight * velRight * droneDragSideways
+        + bodyUp * velUp * droneDragVertical) * dragScalar
+
+    local velMag = velocity.Magnitude
+    if velMag > 0.1 then
+        dragForce = dragForce - velocity * velMag * droneQuadDrag * dragScalar
+    end
+
+    return dragForce
+end
+
+function computeDroneGroundEffectForce(position, thrustDir, motorThrustFraction, massNow, gravityNow)
+    if droneGroundEffectHeight <= 0 or droneGroundEffectStrength <= 0 then
+        return Vector3.zero
+    end
+
+    local rayResult = workspace:Raycast(position, Vector3.new(0, -droneGroundEffectHeight, 0), droneGroundRayParams)
+    if not rayResult then
+        return Vector3.zero
+    end
+
+    local heightAboveGround = (position - rayResult.Position).Magnitude
+    local geFactor = 1 - (heightAboveGround / droneGroundEffectHeight)
+    geFactor = math.clamp(geFactor, 0, 1)
+    local downwashToGround = math.max(0, thrustDir:Dot(BODY_UP))
+    local geStrength = geFactor * geFactor * droneGroundEffectStrength
+        * motorThrustFraction * massNow * gravityNow * downwashToGround
+    return thrustDir * geStrength
+end
+
+function resolveDroneCollision(position, movement)
+    local distance = movement.Magnitude
+    if distance <= 1e-5 then
+        return movement
+    end
+
+    local result = workspace:Raycast(position, movement, droneGroundRayParams)
+    if not result then
+        return movement
+    end
+
+    local dir = movement / distance
+    local allowedDistance = math.max(0, result.Distance - DRONE_COLLISION_RADIUS)
+    local normal = result.Normal
+    local normalVelocity = droneVelocity:Dot(normal)
+    if normalVelocity < 0 then
+        local normalPart = normal * normalVelocity
+        local tangentPart = droneVelocity - normalPart
+        droneVelocity = tangentPart * DRONE_COLLISION_TANGENTIAL_KEEP - normalPart * DRONE_COLLISION_BOUNCE
+        droneAngVel = droneAngVel * 0.65
+    end
+
+    return dir * allowedDistance
+end
+
+resetDronePhysicsState = function()
+    for i = 1, 4 do
+        droneMotorOutputs[i] = 0
+    end
+    droneMotorOutput = 0
+    droneMotorCommand = 0
+    droneBatterySag = 0
+end
+
+function updateDroneMotorOutputs(targets, dt)
+    local totalCommand = 0
+    local totalThrustFraction = 0
+    for i = 1, 4 do
+        local current = droneMotorOutputs[i] or 0
+        local target = math.clamp(targets[i] or 0, 0, 1)
+        local delta = target - current
+        local motorRate
+        if delta > 0 then
+            motorRate = smooth(droneMotorSpinUp, dt)
+        else
+            motorRate = smooth(droneMotorSpinDown, dt)
+        end
+        current = current + delta * motorRate
+        current = math.clamp(current, 0, 1)
+        droneMotorOutputs[i] = current
+        totalCommand = totalCommand + current
+        totalThrustFraction = totalThrustFraction + motorCommandToThrustFraction(current)
+    end
+
+    droneMotorCommand = totalCommand * 0.25
+    droneMotorOutput = totalThrustFraction * 0.25
+    return droneMotorOutput
+end
+
+function getGamepadSticks()
     local lx, ly, rx, ry = 0, 0, 0, 0
     local state = UserInputService:GetGamepadState(Enum.UserInputType.Gamepad1)
     for _, input in ipairs(state) do
@@ -3456,12 +5708,12 @@ local function getGamepadSticks()
     return lx, ly, rx, ry
 end
 
-local function gamepadConnected()
+function gamepadConnected()
     local pads = UserInputService:GetConnectedGamepads()
     return pads and #pads > 0
 end
 
-local function updateStickOverlay(lx, ly, rx, ry)
+function updateStickOverlay(lx, ly, rx, ry)
     if not stickOverlayVisible then return end
     if not uiRefs.leftStickDot or not uiRefs.rightStickDot then return end
     local function setDot(dot, x, y)
@@ -3484,8 +5736,16 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
     updateStickOverlay(lx, ly, rx, ry)
 
     if not freecam then return end
+    if not refreshCameraReference() then return end
+    cam.CameraType = Enum.CameraType.Scriptable
+    if not currentCFrame or not targetCFrame then
+        currentCFrame = cam.CFrame
+        targetCFrame = cam.CFrame
+    end
+    syncDroneRaycastFilter()
 
     local isDrone = currentMode == "Drone"
+    local isGyroscope = currentMode == "Gyroscope"
     local usingGamepad = isDrone and controlsEnabled and padActive
     local droneYawInput, dronePitchInput, droneRollInput, droneThrottleInput = 0, 0, 0, 0
     if usingGamepad then
@@ -3494,19 +5754,49 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
         droneYawInput = -applyDeadzone(lx, droneDeadzone)
         dronePitchInput = applyDeadzone(-ry, droneDeadzone)
 
-        droneYawInput = applyRates(droneYawInput, droneYawExpo, droneYawSuper)
-        dronePitchInput = applyRates(dronePitchInput, dronePitchExpo, dronePitchSuper)
-        droneRollInput = applyRates(droneRollInput, droneRollExpo, droneRollSuper)
+        -- Yaw is always a rate, so we always apply rate curves to it
+        if droneRateType == "Betaflight" then
+            local yawDeg = applyActualRates(droneYawInput, droneActualCenter, droneActualMaxRate, droneActualExpo)
+            droneYawInput = yawDeg / droneYawRate
+        else
+            droneYawInput = applyRates(droneYawInput, droneYawExpo, droneYawSuper)
+        end
+
+        if droneFlightMode == "Angle" then
+            -- For Angle mode, pitch and roll inputs directly command tilt angle.
+            -- Using Betaflight "MaxRate" causes them to exceed 1.0 and severely limits stick resolution.
+            -- Apply simple expo for better center stick feel without inflating the max target angle.
+            dronePitchInput = applyExpo(dronePitchInput, dronePitchExpo)
+            droneRollInput = applyExpo(droneRollInput, droneRollExpo)
+        else
+            -- Acro & 3D mode: Pitch and Roll act as angular rates
+            if droneRateType == "Betaflight" then
+                local pitchDeg = applyActualRates(dronePitchInput, droneActualCenter, droneActualMaxRate, droneActualExpo)
+                local rollDeg = applyActualRates(droneRollInput, droneActualCenter, droneActualMaxRate, droneActualExpo)
+                
+                dronePitchInput = pitchDeg / dronePitchRate
+                droneRollInput = rollDeg / droneRollRate
+            else
+                dronePitchInput = applyRates(dronePitchInput, dronePitchExpo, dronePitchSuper)
+                droneRollInput = applyRates(droneRollInput, droneRollExpo, droneRollSuper)
+            end
+        end
     end
 
     local boostDown = controlsEnabled and UserInputService:IsKeyDown(CONFIG.boostKey)
-    local slowDown = controlsEnabled and UserInputService:IsKeyDown(CONFIG.slowKey)
+    local slowDown = controlsEnabled and not isGyroscope and UserInputService:IsKeyDown(CONFIG.slowKey)
 
     local inputVec = Vector3.zero
     if controlsEnabled and not usingGamepad then
+        local verticalUp = (moveState[Enum.KeyCode.E] and 1 or 0)
+        local verticalDown = (moveState[Enum.KeyCode.Q] and 1 or 0)
+        if isGyroscope then
+            verticalUp = verticalUp + (UserInputService:IsKeyDown(Enum.KeyCode.Space) and 1 or 0)
+            verticalDown = verticalDown + (UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) and 1 or 0)
+        end
         inputVec = Vector3.new(
             (moveState[Enum.KeyCode.D] and 1 or 0) - (moveState[Enum.KeyCode.A] and 1 or 0),
-            (moveState[Enum.KeyCode.E] and 1 or 0) - (moveState[Enum.KeyCode.Q] and 1 or 0),
+            verticalUp - verticalDown,
             (moveState[Enum.KeyCode.S] and 1 or 0) - (moveState[Enum.KeyCode.W] and 1 or 0)
         )
     end
@@ -3559,7 +5849,7 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
     local steps = math.max(1, math.ceil(dt / MAX_STEP))
     local stepDt = dt / steps
     local mouseStepX, mouseStepY = 0, 0
-    if controlsEnabled and not usingGamepad then
+    if controlsEnabled and not usingGamepad and not isGyroscope then
         local mouseDelta = UserInputService:GetMouseDelta()
         mouseStepX = mouseDelta.X / steps
         mouseStepY = mouseDelta.Y / steps
@@ -3567,6 +5857,19 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
     local rotAlphaStep = smooth(rotSmooth, stepDt)
     local posAlphaStep = smooth(posSmooth, stepDt)
     local fovAlphaStep = smooth(fovSmooth, stepDt)
+    local gyroStepYaw, gyroStepPitch, gyroStepRoll = 0, 0, 0
+    local gyroDesiredRot = nil
+    if isGyroscope and controlsEnabled then
+        updateGyroPolling(dt)
+        gyroStepYaw, gyroStepPitch, gyroStepRoll = readGyroDelta(steps, dt)
+        local referenceRot = extractRotationCFrame(targetCFrame or currentCFrame or cam.CFrame)
+        if ensureGyroPoseCalibrated(referenceRot) then
+            gyroDesiredRot = getGyroDesiredRotation()
+            if not gyro6dof.currentRot then
+                gyro6dof.currentRot = referenceRot
+            end
+        end
+    end
     local angleLevelAlphaStep
     local rateResponseAlphaStep
     if usingGamepad then
@@ -3579,11 +5882,56 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
     for i = 1, steps do
         local dt = stepDt
 
+        local orbitKeyboardActive = orbitActive and currentMode == "Normal" and controlsEnabled and not usingGamepad
+        if orbitKeyboardActive then
+            local orbitDir = (moveState[Enum.KeyCode.D] and 1 or 0) - (moveState[Enum.KeyCode.A] and 1 or 0)
+            local orbitVerticalDir = (moveState[Enum.KeyCode.S] and 1 or 0) - (moveState[Enum.KeyCode.W] and 1 or 0)
+            if orbitDir ~= 0 then
+                -- Keep the orbit target continuous so we don't snap when crossing 360 degrees.
+                yawTarget = yawTarget + orbitDir * orbitSpinSpeed * dt
+            end
+            if orbitVerticalDir ~= 0 then
+                -- Keep vertical orbit continuous so W/S can pass over the poles without a snap.
+                pitchTarget = pitchTarget + orbitVerticalDir * orbitSpinSpeed * dt
+            end
+        end
+
         -- Look input
-        if not usingGamepad and controlsEnabled then
-            yawTarget   -= mouseStepX * sensitivity * 0.01
-            pitchTarget -= mouseStepY * sensitivity * 0.01
-            pitchTarget = math.clamp(pitchTarget, -pitchClamp, pitchClamp)
+        if controlsEnabled then
+            if isGyroscope then
+                if not gyroDesiredRot then
+                    yawTarget = yawTarget + gyroStepYaw
+                    pitchTarget = pitchTarget + gyroStepPitch
+                    rollTarget = rollTarget + gyroStepRoll
+                end
+            elseif not usingGamepad then
+                yawTarget = yawTarget - mouseStepX * sensitivity * 0.01
+                pitchTarget = pitchTarget - mouseStepY * sensitivity * 0.01
+            end
+            if not gyroDesiredRot and not (orbitActive and currentMode == "Normal" and controlsEnabled and not usingGamepad) then
+                pitchTarget = math.clamp(pitchTarget, -pitchClamp, pitchClamp)
+            end
+        end
+
+        local targetMotorCmd = 0
+        local acroThrustForce = Vector3.zero
+        if usingGamepad and droneFlightMode == "Acro" then
+            -- Acro uses the command precompute only to shape motor authority.
+            local throttleRaw = (droneThrottleInput + 1) * 0.5
+            droneThrottleState = droneThrottleState + (throttleRaw - droneThrottleState) * smooth(droneThrustResponse, dt)
+            droneThrottleState = math.clamp(droneThrottleState, 0, 1)
+
+            local throttleCurve = applyThrottleCurve(droneThrottleState, droneThrottleMid, droneThrottleExpo)
+            throttleCurve = math.pow(throttleCurve, dronePower)
+
+            local ratio2
+            if throttleCurve >= hoverCurveBase then
+                ratio2 = 1 + (throttleCurve - hoverCurveBase) / math.max(1e-3, (1 - hoverCurveBase)) * (droneTwr - 1)
+            else
+                ratio2 = throttleCurve / math.max(1e-3, hoverCurveBase)
+            end
+            ratio2 = math.max(0, ratio2)
+            targetMotorCmd = thrustRatioToMotorCommand(ratio2, droneTwr)
         end
 
         local rot
@@ -3595,8 +5943,8 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
                 local levelAlpha = angleLevelAlphaStep or smooth(droneAngleLevelStrength, dt)
                 droneAngVel = Vector3.zero
 
-                pitch += (targetPitch - pitch) * levelAlpha
-                roll += (targetRoll - roll) * levelAlpha
+                pitch = pitch + (targetPitch - pitch) * levelAlpha
+                roll = roll + (targetRoll - roll) * levelAlpha
 
                 -- Yaw: stick yaw + coordinated turn yaw from roll angle
                 local coordYaw = math.sin(roll) * droneAngleYawCoord * yawRateRad * dt
@@ -3606,8 +5954,8 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
                     CFrame.Angles(pitch, 0, 0) *
                     CFrame.Angles(0, 0, roll)
                 droneOrient = rot
-            else
-                -- === ACRO / 3D MODE with MOI tensor ===
+            elseif droneFlightMode == "3D" then
+                -- === 3D MODE with MOI tensor ===
                 if not droneOrient then
                     droneOrient = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0) * CFrame.Angles(0, 0, roll)
                 end
@@ -3642,7 +5990,7 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
                 -- === PROPWASH OSCILLATION ===
                 -- Detect if drone is descending into its own propwash
                 if dronePropwashStrength > 0 then
-                    local bodyUp = droneOrient:VectorToWorldSpace(Vector3.new(0, 1, 0))
+                    local bodyUp = droneOrient:VectorToWorldSpace(BODY_UP)
                     local velMag = droneVelocity.Magnitude
                     if velMag > 1 then
                         local velDir = droneVelocity / velMag
@@ -3651,50 +5999,172 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
                         -- Only trigger when descending roughly along body-up axis
                         local propwashZoneFactor = math.clamp(propwashDot - (1 - dronePropwashZone), 0, dronePropwashZone)
                         if propwashZoneFactor > 0 then
+                            local descentSpeed = math.max(0, -droneVelocity:Dot(bodyUp))
                             local pwIntensity = (propwashZoneFactor / math.max(0.01, dronePropwashZone))
                                 * dronePropwashStrength
-                                * math.clamp(velMag / 30, 0, 1)
-                            -- Pseudo-random perturbation using os.clock for high-frequency oscillation
-                            local t = os.clock() * 47.3
-                            local pwPitch = math.sin(t * 7.1 + 1.3) * pwIntensity * pitchRateRad * 0.15
-                            local pwRoll = math.sin(t * 11.7 + 3.7) * pwIntensity * rollRateRad * 0.12
-                            local pwYaw = math.sin(t * 5.3 + 5.1) * pwIntensity * yawRateRad * 0.08
-                            droneAngVel = droneAngVel + Vector3.new(pwPitch, pwYaw, pwRoll)
+                                * math.clamp(descentSpeed / 20, 0, 1)
+                                * math.clamp(droneMotorOutput, 0, 1)
+                            if pwIntensity > 0 then
+                                dronePropwashPhase = (dronePropwashPhase + (8 + descentSpeed * 0.35 + velMag * 0.15) * dt) % TWO_PI
+                                local phase = dronePropwashPhase
+                                local pwPitch = math.sin(phase * 1.31 + 1.3) * pwIntensity * pitchRateRad * 0.08
+                                local pwRoll = math.sin(phase * 1.73 + 3.7) * pwIntensity * rollRateRad * 0.08
+                                local pwYaw = math.sin(phase * 2.11 + 5.1) * pwIntensity * yawRateRad * 0.05
+                                droneAngVel = droneAngVel + Vector3.new(pwPitch, pwYaw, pwRoll)
+                            end
                         end
                     end
                 end
 
-                droneOrient = droneOrient * CFrame.Angles(
-                    droneAngVel.X * dt,
-                    droneAngVel.Y * dt,
-                    droneAngVel.Z * dt
-                )
-                local rx, ry, rz = droneOrient:ToOrientation()
-                pitch, yaw, roll = rx, ry, rz
+                if droneFullRotation then
+                    droneOrient = droneOrient * CFrame.Angles(
+                        droneAngVel.X * dt,
+                        droneAngVel.Y * dt,
+                        droneAngVel.Z * dt
+                    )
+                    local rx, ry, rz = droneOrient:ToOrientation()
+                    pitch, yaw, roll = rx, ry, rz
+                else
+                    yaw = wrapAngle(yaw + droneAngVel.Y * dt)
+                    pitch = math.clamp(pitch + droneAngVel.X * dt, -pitchClamp, pitchClamp)
+                    roll = wrapAngle(roll + droneAngVel.Z * dt)
+                    droneOrient = CFrame.Angles(0, yaw, 0)
+                        * CFrame.Angles(pitch, 0, 0)
+                        * CFrame.Angles(0, 0, roll)
+                end
                 rot = droneOrient
+            else
+                -- === ACRO MODE with motor mixer and torque response ===
+                if not droneOrient then
+                    droneOrient = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0) * CFrame.Angles(0, 0, roll)
+                end
+
+                local targetRates = Vector3.new(
+                    pitchRateRad * dronePitchInput,
+                    yawRateRad * droneYawInput,
+                    rollRateRad * droneRollInput
+                )
+
+                local rateAlphaBase = rateResponseAlphaStep or smooth(droneRateResponse, dt)
+                local inertiaScale = 1 + math.clamp(droneInertia, 0, 1) * 1.35
+                local pitchError = math.clamp((targetRates.X - droneAngVel.X) / math.max(1, pitchRateRad * 0.35), -1, 1)
+                local rollError = math.clamp((targetRates.Z - droneAngVel.Z) / math.max(1, rollRateRad * 0.35), -1, 1)
+                local yawError = math.clamp((targetRates.Y - droneAngVel.Y) / math.max(1, yawRateRad * 0.45), -1, 1)
+                local controlAuthority = motorCommandToThrustFraction(targetMotorCmd)
+                local controlGain = math.clamp((0.08 + controlAuthority * 0.72) * (0.75 + rateAlphaBase) / inertiaScale, 0, 1)
+                local pitchCtrl = pitchError * controlGain
+                local rollCtrl = rollError * controlGain
+                local yawCtrl = yawError * controlGain
+
+                local motorTargets = {
+                    math.clamp(targetMotorCmd - pitchCtrl + rollCtrl - yawCtrl, 0, 1),
+                    math.clamp(targetMotorCmd - pitchCtrl - rollCtrl + yawCtrl, 0, 1),
+                    math.clamp(targetMotorCmd + pitchCtrl - rollCtrl - yawCtrl, 0, 1),
+                    math.clamp(targetMotorCmd + pitchCtrl + rollCtrl + yawCtrl, 0, 1),
+                }
+                local motorAvg = updateDroneMotorOutputs(motorTargets, dt)
+
+                local load = math.clamp(motorAvg, 0, 1)
+                local activity = math.max(math.abs(pitchCtrl), math.abs(rollCtrl), math.abs(yawCtrl))
+                local sagTarget = math.clamp(load * 0.85 + activity * 0.35, 0, 1)
+                droneBatterySag = droneBatterySag + (sagTarget - droneBatterySag) * smooth(math.max(1.2, droneMotorSpinDown * 0.18), dt)
+                local batteryFactor = math.clamp(1 - droneBatterySag * DRONE_BATTERY_SAG_MAX, 0.80, 1)
+
+                local perMotorThrust = droneMassNow * droneGNow * droneVertMult * droneTwr * batteryFactor * 0.25
+                local motorThrust1 = motorCommandToThrustFraction(droneMotorOutputs[1]) * perMotorThrust
+                local motorThrust2 = motorCommandToThrustFraction(droneMotorOutputs[2]) * perMotorThrust
+                local motorThrust3 = motorCommandToThrustFraction(droneMotorOutputs[3]) * perMotorThrust
+                local motorThrust4 = motorCommandToThrustFraction(droneMotorOutputs[4]) * perMotorThrust
+                local totalThrust = motorThrust1 + motorThrust2 + motorThrust3 + motorThrust4
+
+                local pitchTorque = ((motorThrust3 + motorThrust4) - (motorThrust1 + motorThrust2)) * DRONE_ARM_LENGTH
+                local rollTorque = ((motorThrust1 + motorThrust4) - (motorThrust2 + motorThrust3)) * DRONE_ARM_LENGTH
+                local yawTorque = ((motorThrust2 + motorThrust4) - (motorThrust1 + motorThrust3)) * DRONE_YAW_TORQUE
+
+                local angAccel = Vector3.new(
+                    pitchTorque / math.max(0.2, moiPitchNow * inertiaScale),
+                    yawTorque / math.max(0.2, moiYawNow * inertiaScale),
+                    rollTorque / math.max(0.2, moiRollNow * inertiaScale)
+                )
+                droneAngVel = droneAngVel + angAccel * dt
+
+                local damp = math.clamp(droneAngularDamping, 0, 5)
+                if damp > 0 then
+                    local dampFactor = math.max(0, 1 - damp * dt)
+                    droneAngVel = droneAngVel * dampFactor
+                end
+
+                if dronePropwashStrength > 0 then
+                    local bodyUp = droneOrient:VectorToWorldSpace(BODY_UP)
+                    local velMag = droneVelocity.Magnitude
+                    if velMag > 1 then
+                        local velDir = droneVelocity / velMag
+                        local propwashDot = -bodyUp:Dot(velDir)
+                        local propwashZoneFactor = math.clamp(propwashDot - (1 - dronePropwashZone), 0, dronePropwashZone)
+                        if propwashZoneFactor > 0 then
+                            local descentSpeed = math.max(0, -droneVelocity:Dot(bodyUp))
+                            local pwIntensity = (propwashZoneFactor / math.max(0.01, dronePropwashZone))
+                                * dronePropwashStrength
+                                * math.clamp(descentSpeed / 20, 0, 1)
+                                * math.clamp(motorAvg, 0, 1)
+                            if pwIntensity > 0 then
+                                dronePropwashPhase = (dronePropwashPhase + (8 + descentSpeed * 0.35 + velMag * 0.15) * dt) % TWO_PI
+                                local phase = dronePropwashPhase
+                                local pwPitch = math.sin(phase * 1.31 + 1.3) * pwIntensity * pitchRateRad * 0.08
+                                local pwRoll = math.sin(phase * 1.73 + 3.7) * pwIntensity * rollRateRad * 0.08
+                                local pwYaw = math.sin(phase * 2.11 + 5.1) * pwIntensity * yawRateRad * 0.05
+                                droneAngVel = droneAngVel + Vector3.new(pwPitch, pwYaw, pwRoll)
+                            end
+                        end
+                    end
+                end
+
+                if droneFullRotation then
+                    droneOrient = droneOrient * CFrame.Angles(
+                        droneAngVel.X * dt,
+                        droneAngVel.Y * dt,
+                        droneAngVel.Z * dt
+                    )
+                    local rx, ry, rz = droneOrient:ToOrientation()
+                    pitch, yaw, roll = rx, ry, rz
+                else
+                    yaw = wrapAngle(yaw + droneAngVel.Y * dt)
+                    pitch = math.clamp(pitch + droneAngVel.X * dt, -pitchClamp, pitchClamp)
+                    roll = wrapAngle(roll + droneAngVel.Z * dt)
+                    droneOrient = CFrame.Angles(0, yaw, 0)
+                        * CFrame.Angles(pitch, 0, 0)
+                        * CFrame.Angles(0, 0, roll)
+                end
+                rot = droneOrient
+                acroThrustForce = droneOrient:VectorToWorldSpace(BODY_UP) * totalThrust
             end
         else
-            yaw += (yawTarget - yaw) * rotAlphaStep
-            pitch += (pitchTarget - pitch) * rotAlphaStep
-
-            -- Roll per mode
-            if isDrone then
-                roll = 0
-            elseif currentMode == "Gyro" then
-                -- Auto-return to level + allow manual override (gyro fights back)
-                local rollDir = controlsEnabled and ((rollState[CONFIG.rollRightKey] and 1 or 0) - (rollState[CONFIG.rollLeftKey] and 1 or 0)) or 0
-                roll += rollDir * rollSpeed * dt
-                roll = roll * math.max(0, 1 - gyroStrength * dt)
+            if isGyroscope and gyroDesiredRot then
+                local currentRot = gyro6dof.currentRot or extractRotationCFrame(currentCFrame or targetCFrame or cam.CFrame)
+                gyro6dof.currentRot = currentRot:Lerp(gyroDesiredRot, rotAlphaStep)
+                rot = gyro6dof.currentRot
+                pitch, yaw, roll = rot:ToOrientation()
+                pitchTarget, yawTarget, rollTarget = pitch, yaw, roll
             else
-                -- Normal manual roll
-                local rollDir = controlsEnabled and ((rollState[CONFIG.rollRightKey] and 1 or 0) - (rollState[CONFIG.rollLeftKey] and 1 or 0)) or 0
-                roll += rollDir * rollSpeed * dt
-            end
+                yaw = yaw + (yawTarget - yaw) * rotAlphaStep
+                pitch = pitch + (pitchTarget - pitch) * rotAlphaStep
 
-            rot =
-                CFrame.Angles(0, yaw, 0) *
-                CFrame.Angles(pitch, 0, 0) *
-                CFrame.Angles(0, 0, roll)
+                -- Roll per mode
+                if isDrone then
+                    roll = 0
+                elseif isGyroscope then
+                    roll = roll + (rollTarget - roll) * rotAlphaStep
+                else
+                    -- Normal manual roll
+                    local rollDir = controlsEnabled and ((rollState[CONFIG.rollRightKey] and 1 or 0) - (rollState[CONFIG.rollLeftKey] and 1 or 0)) or 0
+                    roll = roll + rollDir * rollSpeed * dt
+                end
+
+                rot =
+                    CFrame.Angles(0, yaw, 0) *
+                    CFrame.Angles(pitch, 0, 0) *
+                    CFrame.Angles(0, 0, roll)
+            end
         end
 
         local camRot = rot
@@ -3706,160 +6176,132 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
             local orbitRot = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0)
             local offset = orbitRot:VectorToWorldSpace(Vector3.new(0, 0, orbitRadius))
             local desiredPos = orbitPos + offset
-            targetCFrame = CFrame.new(desiredPos, orbitPos) * CFrame.Angles(0, 0, roll)
+            local orbitUp = orbitRot:VectorToWorldSpace(BODY_UP)
+            targetCFrame = CFrame.lookAt(desiredPos, orbitPos, orbitUp) * CFrame.Angles(0, 0, roll)
         else
             local move = Vector3.zero
             if not orbitEnabled and controlsEnabled then
                 if usingGamepad then
-                    -- === THROTTLE / THRUST COMPUTATION ===
-                    local thrustMag
-                    local targetMotor
-
-                    if droneFlightMode == "3D" then
-                        -- 3D mode: stick center = 0 thrust, up = +thrust, down = -thrust (symmetric)
-                        local signed = math.clamp(droneThrottleInput, -1, 1)
-                        droneThrottleState += (signed - droneThrottleState) * smooth(droneThrustResponse, dt)
-                        droneThrottleState = math.clamp(droneThrottleState, -1, 1)
-                        local absVal = math.abs(droneThrottleState)
-                        local curved = math.pow(absVal, dronePower)
-                        local signedCurve = (droneThrottleState < 0 and -curved or curved)
-                        -- Symmetric: no penalty for reverse thrust in 3D mode
-                        targetMotor = math.abs(signedCurve)
-                        thrustMag = signedCurve * droneTwr * droneMassNow * droneGNow * droneVertMult
+                    if droneFlightMode == "Acro" then
+                        -- Use the torque-based motor model from the rotation step.
+                        local thrustForce = acroThrustForce
+                        local gravityForce = Vector3.new(0, -droneGNow * droneMassNow, 0)
+                        local dronePos = (targetCFrame or currentCFrame or cam.CFrame).Position
+                        local thrustDir = rot:VectorToWorldSpace(BODY_UP)
+                        local dragForce = computeDroneDragForce(rot, droneVelocity)
+                        local groundEffectForce = computeDroneGroundEffectForce(dronePos, thrustDir, droneMotorOutput, droneMassNow, droneGNow)
+                        local totalForce = thrustForce + gravityForce + dragForce + groundEffectForce
+                        local accel = totalForce / math.max(0.01, droneMassNow)
+                        droneVelocity = droneVelocity + accel * dt
+                        move = droneVelocity * dt
                     else
-                        -- Acro / Angle: stick low = 0 thrust, stick high = max
-                        local throttleRaw = (droneThrottleInput + 1) * 0.5
-                        droneThrottleState += (throttleRaw - droneThrottleState) * smooth(droneThrustResponse, dt)
-                        droneThrottleState = math.clamp(droneThrottleState, 0, 1)
+                        -- === THROTTLE / THRUST COMPUTATION ===
+                        local targetMotor
+                        local thrustSign = 1
 
-                        local throttleCurve = applyThrottleCurve(droneThrottleState, droneThrottleMid, droneThrottleExpo)
-                        throttleCurve = math.pow(throttleCurve, dronePower)
-
-                        local ratio2
-                        if throttleCurve >= hoverCurveBase then
-                            ratio2 = 1 + (throttleCurve - hoverCurveBase) / math.max(1e-3, (1 - hoverCurveBase)) * (droneTwr - 1)
+                        if droneFlightMode == "3D" then
+                            -- 3D mode: stick center = 0 thrust, up = +thrust, down = -thrust (symmetric)
+                            local signed = math.clamp(droneThrottleInput, -1, 1)
+                            droneThrottleState = droneThrottleState + (signed - droneThrottleState) * smooth(droneThrustResponse, dt)
+                            droneThrottleState = math.clamp(droneThrottleState, -1, 1)
+                            local absVal = math.abs(droneThrottleState)
+                            local curved = math.pow(absVal, dronePower)
+                            local signedCurve = (droneThrottleState < 0 and -curved or curved)
+                            -- Symmetric: no penalty for reverse thrust in 3D mode
+                            targetMotor = thrustFractionToMotorCommand(math.abs(signedCurve))
+                            thrustSign = signedCurve < 0 and -1 or 1
                         else
-                            ratio2 = throttleCurve / math.max(1e-3, hoverCurveBase)
+                            -- Acro / Angle: stick low = 0 thrust, stick high = max
+                            local throttleRaw = (droneThrottleInput + 1) * 0.5
+                            droneThrottleState = droneThrottleState + (throttleRaw - droneThrottleState) * smooth(droneThrustResponse, dt)
+                            droneThrottleState = math.clamp(droneThrottleState, 0, 1)
+
+                            local throttleCurve = applyThrottleCurve(droneThrottleState, droneThrottleMid, droneThrottleExpo)
+                            throttleCurve = math.pow(throttleCurve, dronePower)
+
+                            local ratio2
+                            if throttleCurve >= hoverCurveBase then
+                                ratio2 = 1 + (throttleCurve - hoverCurveBase) / math.max(1e-3, (1 - hoverCurveBase)) * (droneTwr - 1)
+                            else
+                                ratio2 = throttleCurve / math.max(1e-3, hoverCurveBase)
+                            end
+                            ratio2 = math.max(0, ratio2)
+                            targetMotor = thrustRatioToMotorCommand(ratio2, droneTwr)
                         end
-                        ratio2 = math.max(0, ratio2)
-                        targetMotor = ratio2 / math.max(0.1, droneTwr)
-                        thrustMag = ratio2 * droneMassNow * droneGNow * droneVertMult
-                    end
 
-                    -- === ASYMMETRIC MOTOR RESPONSE ===
-                    -- Motors spin up faster than they spin down
-                    targetMotor = math.clamp(targetMotor, 0, 1)
-                    local motorDelta = targetMotor - droneMotorOutput
-                    local motorRate
-                    if motorDelta > 0 then
-                        motorRate = smooth(droneMotorSpinUp, dt)
-                    else
-                        motorRate = smooth(droneMotorSpinDown, dt)
-                    end
-                    droneMotorOutput = droneMotorOutput + motorDelta * motorRate
-                    droneMotorOutput = math.clamp(droneMotorOutput, 0, 1)
-
-                    -- Scale thrust by motor output to get the actual effective thrust
-                    -- The motor output smooths the transition, creating lag on spin-down
-                    local motorRatio = 1
-                    if targetMotor > 0.01 then
-                        motorRatio = droneMotorOutput / targetMotor
-                    elseif droneMotorOutput > 0.01 then
-                        motorRatio = droneMotorOutput
-                    end
-                    local effectiveThrust = thrustMag * math.clamp(motorRatio, 0, 1.5)
-
-                    -- Thrust direction (always body-local up)
-                    local thrustDir = rot:VectorToWorldSpace(Vector3.new(0, 1, 0))
-                    local thrustForce = thrustDir * effectiveThrust
-
-                    -- Gravity
-                    local gravityForce = Vector3.new(0, -droneGNow * droneMassNow, 0)
-
-                    -- === ANISOTROPIC DRAG ===
-                    -- Decompose velocity into body-local components
-                    local bodyForward = rot:VectorToWorldSpace(Vector3.new(0, 0, -1))
-                    local bodyRight = rot:VectorToWorldSpace(Vector3.new(1, 0, 0))
-                    local bodyUp = rot:VectorToWorldSpace(Vector3.new(0, 1, 0))
-
-                    local velForward = droneVelocity:Dot(bodyForward)
-                    local velRight = droneVelocity:Dot(bodyRight)
-                    local velUp = droneVelocity:Dot(bodyUp)
-
-                    -- Apply different drag coefficients per axis
-                    local dragFwd = droneDragForward
-                    local dragSide = droneDragSideways
-                    local dragVert = droneDragVertical
-
-                    -- Linear drag per axis
-                    local dragForce = -(bodyForward * velForward * dragFwd
-                        + bodyRight * velRight * dragSide
-                        + bodyUp * velUp * dragVert)
-
-                    -- Quadratic drag (uses total velocity for high-speed regime)
-                    local velMag = droneVelocity.Magnitude
-                    local quadDragForce = Vector3.zero
-                    if velMag > 0.1 then
-                        quadDragForce = -droneVelocity * velMag * droneQuadDrag
-                    end
-
-                    -- === GROUND EFFECT ===
-                    local groundEffectForce = Vector3.zero
-                    if droneGroundEffectHeight > 0 and droneGroundEffectStrength > 0 then
-                        local dronePos = targetCFrame.Position
-                        local rayParams = RaycastParams.new()
-                        rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                        local exclude = {}
-                        if player.Character then
-                            table.insert(exclude, player.Character)
+                        -- === ASYMMETRIC MOTOR RESPONSE ===
+                        -- Motors spin up faster than they spin down
+                        targetMotor = math.clamp(targetMotor, 0, 1)
+                        local motorDelta = targetMotor - droneMotorCommand
+                        local motorRate
+                        if motorDelta > 0 then
+                            motorRate = smooth(droneMotorSpinUp, dt)
+                        else
+                            motorRate = smooth(droneMotorSpinDown, dt)
                         end
-                        rayParams.FilterDescendantsInstances = exclude
-                        rayParams.IgnoreWater = true
-                        local rayResult = workspace:Raycast(dronePos, Vector3.new(0, -droneGroundEffectHeight, 0), rayParams)
-                        if rayResult then
-                            local heightAboveGround = (dronePos - rayResult.Position).Magnitude
-                            local geFactor = 1 - (heightAboveGround / droneGroundEffectHeight)
-                            geFactor = math.clamp(geFactor, 0, 1)
-                            -- Ground effect is stronger with more motor output
-                            local geStrength = geFactor * geFactor * droneGroundEffectStrength
-                                * droneMotorOutput * droneMassNow * droneGNow
-                            groundEffectForce = Vector3.new(0, geStrength, 0)
-                        end
+                        droneMotorCommand = droneMotorCommand + motorDelta * motorRate
+                        droneMotorCommand = math.clamp(droneMotorCommand, 0, 1)
+                        droneMotorOutput = motorCommandToThrustFraction(droneMotorCommand)
+
+                        local sagTarget = math.clamp(droneMotorOutput * 0.85, 0, 1)
+                        droneBatterySag = droneBatterySag + (sagTarget - droneBatterySag) * smooth(math.max(1.2, droneMotorSpinDown * 0.18), dt)
+                        local batteryFactor = math.clamp(1 - droneBatterySag * DRONE_BATTERY_SAG_MAX, 0.80, 1)
+                        local maxThrust = droneTwr * droneMassNow * droneGNow * droneVertMult * batteryFactor
+                        local effectiveThrust = thrustSign * droneMotorOutput * maxThrust
+
+                        -- Thrust direction (always body-local up)
+                        local thrustDir = rot:VectorToWorldSpace(BODY_UP)
+                        local thrustForce = thrustDir * effectiveThrust
+
+                        -- Gravity
+                        local gravityForce = Vector3.new(0, -droneGNow * droneMassNow, 0)
+                        local dronePos = (targetCFrame or currentCFrame or cam.CFrame).Position
+                        local dragForce = computeDroneDragForce(rot, droneVelocity)
+                        local groundMotorFraction = thrustSign > 0 and droneMotorOutput or 0
+                        local groundEffectForce = computeDroneGroundEffectForce(dronePos, thrustDir, groundMotorFraction, droneMassNow, droneGNow)
+
+                        -- === TOTAL ACCELERATION ===
+                        local totalForce = thrustForce + gravityForce + dragForce + groundEffectForce
+                        local accel = totalForce / math.max(0.01, droneMassNow)
+
+                        -- Euler integration (massa sejati secara inheren mengatur momentum translasi, percepatan = F/m)
+                        droneVelocity = droneVelocity + accel * dt
+                        move = droneVelocity * dt
                     end
-
-                    -- === TOTAL ACCELERATION ===
-                    local totalForce = thrustForce + gravityForce + dragForce + quadDragForce + groundEffectForce
-                    local accel = totalForce / droneMassNow
-
-                    local velTarget = droneVelocity + accel * dt
-                    local inertia = math.clamp(droneInertia, 0, 1)
-                    local velAlpha = math.clamp(1 - inertia, 0.02, 1)
-                    droneVelocity = droneVelocity:Lerp(velTarget, velAlpha)
-                    move = droneVelocity * dt
                 else
                     if isDrone then
                         droneVelocity = Vector3.zero
                         droneThrottleState = 0
-                        droneMotorOutput = 0
+                        resetDronePhysicsState()
                     end
-                    if inputMag > 0 then
+                    if inputMag > 0 or isGyroscope then
                         local speedNow = speed
                         if boostDown then
-                            speedNow *= boostMultiplier
+                            speedNow = speedNow * boostMultiplier
                         elseif slowDown then
-                            speedNow *= slowMultiplier
+                            speedNow = speedNow * slowMultiplier
                         end
 
-                        if isDrone then
-                            -- Horizontal movement only: W/S on XZ plane, Q/E vertical
-                            local sinY = math.sin(yaw)
-                            local cosY = math.cos(yaw)
-                            local fwd   = Vector3.new(-sinY, 0, -cosY)
-                            local right = Vector3.new( cosY, 0, -sinY)
-                            local up    = Vector3.new(0, 1, 0)
-                            move = (right * inputVec.X + (up * inputVec.Y * droneVertMult) + fwd * inputVec.Z) * speedNow * dt
+                        if isDrone or isGyroscope then
+                            -- Body-relative move is more precise than yaw-only movement.
+                            if isDrone then
+                                local localMove = Vector3.new(
+                                    inputVec.X,
+                                    inputVec.Y * droneVertMult,
+                                    inputVec.Z
+                                )
+                                move = rot:VectorToWorldSpace(localMove) * speedNow * dt
+                            else
+                                local keyboardWorld = Vector3.zero
+                                if inputMag > 0 then
+                                    local horizontalMove = camRot:VectorToWorldSpace(Vector3.new(inputVec.X, 0, inputVec.Z))
+                                    keyboardWorld = (horizontalMove + Vector3.new(0, inputVec.Y, 0)) * speedNow
+                                end
+                                local gyroWorld = controlsEnabled and updateGyroMotionVector(camRot, speedNow, dt) or Vector3.zero
+                                move = (keyboardWorld + gyroWorld) * dt
+                            end
                         else
-                            -- Normal / Gyro: full 3D movement
+                            -- Normal full 3D movement
                             move = rot:VectorToWorldSpace(inputUnit) * speedNow * dt
                         end
                     end
@@ -3868,17 +6310,30 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
                 if isDrone then
                     droneVelocity = Vector3.zero
                     droneThrottleState = 0
-                    droneMotorOutput = 0
+                    resetDronePhysicsState()
+                elseif isGyroscope then
+                    gyro6dof.worldVelocity = gyro6dof.worldVelocity + (Vector3.zero - gyro6dof.worldVelocity) * smooth(gyro6dof.moveDamping, dt)
                 end
             end
 
-            targetCFrame = CFrame.new(targetCFrame.Position + move) * camRot
+            local baseCFrame = targetCFrame or currentCFrame or cam.CFrame
+            if not baseCFrame then
+                return
+            end
+            if usingGamepad then
+                move = resolveDroneCollision(baseCFrame.Position, move)
+            end
+            targetCFrame = CFrame.new(baseCFrame.Position + move) * camRot
         end
 
-        currentCFrame = currentCFrame:Lerp(targetCFrame, posAlphaStep)
+        currentCFrame = (currentCFrame or targetCFrame or cam.CFrame):Lerp(targetCFrame or currentCFrame or cam.CFrame, posAlphaStep)
         cam.CFrame = currentCFrame
-        cam.FieldOfView += (targetFov - cam.FieldOfView) * fovAlphaStep
-        uiUpdateAccum += dt
+        cam.FieldOfView = cam.FieldOfView + (targetFov - cam.FieldOfView) * fovAlphaStep
+        if i == steps then
+            updateOrbitPickPreview()
+        end
+        updateDofAutoFocus(dt)
+        uiUpdateAccum = uiUpdateAccum + dt
         if i == steps then
             if uiUpdateAccum >= UI_UPDATE_DT then
                 refreshUiText()
@@ -3887,5 +6342,3 @@ table.insert(connections, RunService.RenderStepped:Connect(function(dt)
         end
     end
 end))
-
-print("Hi!")
